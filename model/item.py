@@ -1,22 +1,22 @@
 from transformers import BertTokenizer, BertModel
-
 import torch
-import torch.nn.functional as F
-from tqdm import tqdm
+
 
 from common.constants import DIM, MAX_WORDS
 model = BertModel.from_pretrained('bert-large-uncased')
 tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
 
 class Item:
-    def __init__(self, id, topic, title, content):
+    def __init__(self, index:int, id:str, topic:str, title:str, content:str):
+        self.index = index
         self.id = id
         self.topic = topic
         self.title = title
         self.content = content
+        self.tensor = None
 
     def __str__(self):
-        return f"Item {self.id}: {self.topic} - {self.content}"
+        return f"Item {self.id}: {self.topic} - {self.title} - {self.content}"
     
     def __eq__(self, value):
         if not isinstance(value, Item):
@@ -24,7 +24,11 @@ class Item:
         return self.id == value.id
     
     def generate_tensor(self):
-        total_str = self.title + " " + self.abstract
+        try:
+            total_str = self.title + " " + self.content
+        except:
+            self.content = str(self.content)
+            total_str = self.title + " " + self.content
         sentence = total_str[:MAX_WORDS] if len(total_str) > MAX_WORDS else total_str
         tokens = tokenizer.encode(sentence, add_special_tokens=True)
         input_ids = torch.tensor(tokens).unsqueeze(0)

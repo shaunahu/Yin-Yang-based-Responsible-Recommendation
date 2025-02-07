@@ -1,5 +1,6 @@
 from common import logger
-from utils.utils import ConfigUtil 
+from common.constants import ITEM_PICKLE_FILE, USER_PICKLE_FILE
+from utils.utils import ConfigUtil, load_from_file
 from utils.data_preprocesser import DataPreprocesser
 
 class Simulator:
@@ -22,6 +23,12 @@ class Simulator:
     def data_preprocesser(self):
         dataset = self.config.get("simulation", "dataset")
         data_preprocesser = DataPreprocesser(dataset)
+        if not data_preprocesser.check_pickle_file():
+            data_preprocesser.preprocess_item_data()
+            data_preprocesser.preprocess_user_data()
+        else:
+            self.items = load_from_file(data_preprocesser.resource_path / ITEM_PICKLE_FILE)
+            self.users = load_from_file(data_preprocesser.resource_path / USER_PICKLE_FILE)
 
     def run(self):
         logger.info("\n" + "=" * 50)
