@@ -14,3 +14,10 @@ Yin-Yang-based-Responsible-Recommendation (rootpath)
     |--- run.py # the entry of running a simulation
 | --- tests # test folder for unit testing major functions
 ```
+
+## Installation
+1. Please make sure conda is installed.
+2. To create conda environment, run
+```
+conda env create -f environment.yml
+```

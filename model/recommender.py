@@ -4,7 +4,8 @@ The original recommendation system class.
 from typing import List
 from model.item import Item
 from model.user_agent import UserAgent
-from common.constants import SELECTED_METHODS
+from common.constants import SELECTIVE_METHODS
+from common import logger
 
 class Recommender:
     def __init__(self, items: List[Item], users: List[UserAgent]):
@@ -27,4 +28,8 @@ class Recommender:
     Check valid method name
     """
     def is_valid_method(self, method: str) -> bool:
-        return method in SELECTED_METHODS
+        if method.lower() not in [s.lower() for s in SELECTIVE_METHODS]:
+            logger.error(f"Method {method} is not valid")
+            return False
+        else:
+            return True
