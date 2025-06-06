@@ -9,7 +9,7 @@ def clean_topic_similarity_file(input_path, output_path):
     """
     with open(input_path, 'r', encoding='utf-8') as fin, open(output_path, 'w', encoding='utf-8') as fout:
         for line in fin:
-            parts = line.strip().split()  # 自动支持空格或 tab
+            parts = line.strip().split()  # support space or tab
             if len(parts) == 3:
                 topic1, topic2, similarity = parts[0].strip(), parts[1].strip(), parts[2].strip()
                 fout.write(f"{topic1}\t{topic2}\t{similarity}\n")
