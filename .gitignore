@@ -2,3 +2,4 @@ resource/
 graph/data/
 .history
 graph/community_output/
+__pycache__
