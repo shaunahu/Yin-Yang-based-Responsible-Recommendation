@@ -21,3 +21,7 @@ Yin-Yang-based-Responsible-Recommendation (rootpath)
 ```
 conda env create -f environment.yml
 ```
+
+## data
+1. `news_item_graph_full_augmented.pkl` includes the graph and edge data of 300 nodes subset `news_item_subset_300.csv`. 
+2. Edge inculde informtion: (1) topic similarity, (2) semantic similarity, (3) sentiment similarity
