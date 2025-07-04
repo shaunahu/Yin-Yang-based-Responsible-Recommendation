@@ -3,3 +3,4 @@ graph/data/
 .history
 graph/community_output/
 __pycache__
+*.pyc

@@ -1,7 +1,7 @@
 from common import logger
 from common.constants import ITEM_PICKLE_FILE, USER_PICKLE_FILE
 from utils.utils import ConfigUtil, load_from_file
-from utils.data_preprocesser import DataPreprocesser
+from utils.data_preprocessor import DataPreprocesser
 
 class Simulator:
     def __init__(self):
