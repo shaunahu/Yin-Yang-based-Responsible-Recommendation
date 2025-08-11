@@ -22,6 +22,10 @@ class Item:
         if not isinstance(value, Item):
             return False
         return self.id == value.id
+
+    def __hash__(self):
+        return hash(self.id)
+
     
     def generate_tensor(self):
         try:
