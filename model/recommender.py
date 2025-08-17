@@ -2,6 +2,7 @@
 The original recommendation system class.
 """
 from recbole.config import Config
+from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
 from recbole.model.general_recommender import Pop, LightGCN
 
@@ -32,6 +33,10 @@ class Recommender:
             customized_dataset = f"{self.dataset}.inter"
             recommender_config = Config(model=selected_method, dataset=customized_dataset, config_dict=self.config.rs_config)
 
+            init_seed(recommender_config['seed'], recommender_config['reproducibility'])
+
+            # logger initialization
+            init_logger(recommender_config)
             dataset = create_dataset(recommender_config)
 
             # train_data, valid_data, test_data = data_preparation(recommender_config, dataset)
