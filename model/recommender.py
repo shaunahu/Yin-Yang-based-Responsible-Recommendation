@@ -1,11 +1,17 @@
 """
 The original recommendation system class.
 """
+from recbole.config import Config
+from recbole.utils import init_seed, init_logger
+from recbole.data import create_dataset, data_preparation
+from recbole.model.general_recommender import Pop, LightGCN
+
 from typing import List
 from model.item import Item
 from model.user_agent import UserAgent
 from common.constants import SELECTIVE_METHODS
 from common import logger
+from config.config import RSConfig
 
 class Recommender:
     def __init__(self, items: List[Item], users: List[UserAgent]):
@@ -14,15 +20,28 @@ class Recommender:
         # a list of users of the system
         self.users = users
 
-    """
-    
-    """
-    def recommendation_algorithm(self, selected_method: str):
+        self.config = RSConfig()
+        self.base_config = self.config.get_config()
+        self.dataset = self.base_config.get("simulation", "dataset")
+        self.recommender = self.base_config.get("simulation", "recommender")
+
+        self.init_rs(self.recommender)
+
+
+    def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
-            # TODO
-            pass
+            customized_dataset = f"{self.dataset}.inter"
+            recommender_config = Config(model=selected_method, dataset=customized_dataset, config_dict=self.config.rs_config)
+
+            init_seed(recommender_config['seed'], recommender_config['reproducibility'])
+
+            # logger initialization
+            init_logger(recommender_config)
+            dataset = create_dataset(recommender_config)
+
+            # train_data, valid_data, test_data = data_preparation(recommender_config, dataset)
         else:
-            raise ValueError(f"Invalid method name, please select from these options: {SELECTED_METHODS}")
+            raise ValueError(f"Invalid method name, please select from these options: {SELECTIVE_METHODS}")
     
     """
     Check valid method name
