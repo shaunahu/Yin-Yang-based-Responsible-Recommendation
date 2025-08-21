@@ -1,4 +1,4 @@
-SELECTED_METHODS = ['NGCF', 'LGCN', 'DGCF', 'Random']
+SELECTIVE_METHODS = ["Pop", "LightGCN"]
 SELECTIVE_DATASETS = ["movie", "book", "news"]
 ITEM_FILE = "items.tsv"
 ITEM_PICKLE_FILE = "items.pkl"

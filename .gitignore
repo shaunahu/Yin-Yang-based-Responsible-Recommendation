@@ -1,5 +1,8 @@
 resource/
 graph/data/
+graph/news_full_data/data_news/
+graph/news_full_data/data_features/
+graph/news_full_data/news_full_dataset_graph_data/
 .history
 graph/community_output/
 __pycache__
