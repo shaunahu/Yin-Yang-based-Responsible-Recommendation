@@ -22,7 +22,7 @@ def build_fully_connected_graph_from_csv(csv_path: str, id_col: str = "item_id")
     G = nx.Graph()
     G.add_nodes_from(items)
 
-    # ✅ 带进度条生成边
+    # Generate edge with progress bar
     total_edges = len(items) * (len(items) - 1) // 2
     print(f"👉 Building fully connected graph: {len(items)} nodes, ~{total_edges:,} edges")
     for u, v in tqdm(combinations(items, 2), total=total_edges, desc="Adding edges"):
@@ -43,7 +43,7 @@ def main():
     # Input CSV (filtered items)
     input_csv = os.path.join(BASE_DIR, "data_news", "items_filtered.csv")
 
-    # Output folder（已存在）
+    # Output folder（existing）
     out_dir = os.path.join(BASE_DIR, "news_full_dataset_graph_data")
     if not os.path.isdir(out_dir):
         raise FileNotFoundError(f"Output directory not found: {out_dir}")
