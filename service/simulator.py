@@ -1,3 +1,5 @@
+import numpy as np
+
 from common import logger
 from common.constants import ITEM_PICKLE_FILE, USER_PICKLE_FILE
 from utils.utils import ConfigUtil, load_from_file
@@ -8,6 +10,8 @@ class Simulator:
     def __init__(self):
         self.users = []
         self.items = []
+        self.user_item_info = None
+        self.inter = None
 
         # load configuration
         self.config = ConfigUtil().get_config()
@@ -31,19 +35,35 @@ class Simulator:
             self.items = load_from_file(data_preprocesser.resource_path / ITEM_PICKLE_FILE)
             self.users = load_from_file(data_preprocesser.resource_path / USER_PICKLE_FILE)
 
-        inter, info = create_user_item_interactions(self.users, self.items)
+        inter, info, users, items = create_user_item_interactions(self.users, self.items)
+        self.user_item_info = info
+        self.inter = inter
+        # only use filtered users and items
+        self.users = users
+        self.items = items
         logger.info("=" * 50)
-        logger.info(info)
+        logger.info(f"Users: {len(users)} | Items: {len(items)} | Interactions: {len(inter)}")
         logger.info("=" * 50)
-
         data_preprocesser.create_atomic_file(inter)
 
     def run(self):
         logger.info("\n" + "=" * 50)
         timesteps = self.config.getint("simulation", "timesteps")
+
         # init RS at the beginning
         rs = Recommender(items=self.items, users=self.users)
-        # for step in range(1, timesteps):
+
+        rs.load_saved_model()
+        if rs.saved_model is not None:
+            logger.info(f"Recommender: {self.recommender} | Loaded from saved model...")
+        else:
+            logger.info(f"Recommender: {self.recommender} | Starting from training...")
+            rs.init_rs(rs.recommender)
+            rs.load_saved_model()
+        user_token = np.array(list(self.user_item_info["index_to_user"].keys()))
+        for step in range(1, timesteps):
+            # start recommendation from RS
+            rs.make_recommendation(user_token)
         #     logger.info(f"Timestep {step}:")
 
 

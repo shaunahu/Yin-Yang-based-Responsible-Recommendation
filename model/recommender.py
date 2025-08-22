@@ -5,13 +5,26 @@ from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
 from recbole.model.general_recommender import Pop, LightGCN
+from recbole.trainer import Trainer
 
-from typing import List
+from recbole.quick_start import load_data_and_model
+from recbole.utils.case_study import full_sort_topk
+
+from typing import List, Any
 from model.item import Item
 from model.user_agent import UserAgent
 from common.constants import SELECTIVE_METHODS
 from common import logger
 from config.config import RSConfig
+import os
+from dataclasses import dataclass
+
+@dataclass
+class RSData:
+    dataset: Any
+    train_data: Any
+    valid_data: Any
+    test_data: Any
 
 class Recommender:
     def __init__(self, items: List[Item], users: List[UserAgent]):
@@ -25,8 +38,32 @@ class Recommender:
         self.dataset = self.base_config.get("simulation", "dataset")
         self.recommender = self.base_config.get("simulation", "recommender")
 
-        self.init_rs(self.recommender)
+        self.saved_config = None
+        self.saved_model = None
+        self.data = None
 
+
+    def load_saved_model(self):
+        saved_model_path = self.config.base_path / "saved" / f"{self.recommender}.pth"
+        if not os.path.exists(saved_model_path):
+            logger.error(f' ========= model not found in {saved_model_path}! ========== ')
+        try:
+            config, model, dataset, train_data, valid_data, test_data = load_data_and_model(saved_model_path)
+            self.saved_config = config
+            self.saved_model = model
+            self.data = RSData(dataset, train_data, valid_data, test_data)
+        except Exception as e:
+            logger.error(e)
+
+    def make_recommendation(self, user_token):
+        top_k = self.base_config.getint("recommender", "top_k")
+
+        test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
+        user_token = test_users.numpy()[:10]
+
+        topk_score, topk_iid_list = full_sort_topk(user_token, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
+
+        print(topk_iid_list)
 
     def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
@@ -39,7 +76,27 @@ class Recommender:
             init_logger(recommender_config)
             dataset = create_dataset(recommender_config)
 
-            # train_data, valid_data, test_data = data_preparation(recommender_config, dataset)
+            train_data, valid_data, test_data = data_preparation(recommender_config, dataset)
+
+            rec_model = None
+            if selected_method == 'LightGCN':
+                rec_model = LightGCN(recommender_config, train_data.dataset).to(recommender_config['device'])
+            if selected_method == 'Pop':
+                rec_model = Pop(recommender_config, train_data.dataset).to(recommender_config['device'])
+
+            if rec_model:
+                logger.info(rec_model)
+                trainer = Trainer(recommender_config, rec_model)
+                trainer.saved_model_file = trainer.saved_model_file.split('-')[0] + '.pth'
+
+                # model training
+                best_valid_score, best_valid_result = trainer.fit(train_data, valid_data)
+
+                import gc
+                del trainer, train_data, valid_data, test_data
+                gc.collect()
+
+                logger.info(' ---- model trained successfully! ----- ')
         else:
             raise ValueError(f"Invalid method name, please select from these options: {SELECTIVE_METHODS}")
     

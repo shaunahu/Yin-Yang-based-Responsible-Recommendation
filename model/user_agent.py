@@ -7,6 +7,10 @@ class UserAgent:
         self.id = id
         self.accept_list = []
         self.reject_list = []
+        self.timestamp = None
+
+    def set_timestamp(self, timestamp: float):
+        self.timestamp = timestamp
 
     def set_accept_list(self, accept_list):
         self.accept_list = accept_list

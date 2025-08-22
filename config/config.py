@@ -28,23 +28,25 @@ class RSConfig(BaseConfig):
     def get_rs_config(self):
         base_config = self.get_config()
         return {
-            'data_path': self.base_path / "recbox_data",
-            'USER_ID_FIELD': 'user_index:token',
-            'ITEM_ID_FIELD': 'item_index:token',
-            'LABEL_FIELD': 'rating:float',
-            'user_inter_num_interval': '[0,Inf)',
-            'item_inter_num_interval': '[0,Inf)',
-            'load_col': {'inter': ['user_index:token', 'item_index:token', 'rating:float']},
+        # dataset parameter settings
+        'data_path': self.base_path / "recbox_data",
+        'USER_ID_FIELD': 'user_id',
+        'ITEM_ID_FIELD': 'item_id',
+        'LABEL_FIELD': 'label',
+        'TIME_FIELD': 'timestamp',
+        'user_inter_num_interval': '[0,Inf)',
+        'item_inter_num_interval': '[0,Inf)',
+        'load_col': {'inter': ['user_id', 'item_id', 'label', 'timestamp']},
 
-            # training parameter settings
-            'epochs': base_config.getint("recommender", "epochs"),
-            # 'stopping_step': 10,
-            'learning_rate': base_config.getfloat("recommender", "learning_rate"),
+        # training parameter settings
+        'epochs': base_config.getint("recommender", "epochs"),
+        # 'stopping_step': 10,
+        'learning_rate': base_config.getfloat("recommender", "learning_rate"),
 
-            # evaluation parameter settings
-            'eval_args': {
-                'split': {'RS': [8, 1, 1]},
-                'group_by': 'user',
-                'order': 'TO',
-                'mode': 'full'}
-        }
+        # evaluation parameter settings
+        'eval_args': {
+            'split': {'RS': [8, 1, 1]},
+            'group_by': 'user',
+            'order': 'TO',
+            'mode': 'full'}
+    }

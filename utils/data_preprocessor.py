@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+from datetime import datetime
 
 from utils.utils import save_to_file, load_from_file
 from common.constants import (SELECTIVE_DATASETS, 
@@ -91,10 +92,20 @@ class DataPreprocesser:
         # item.generate_tensor()
         return item
 
+    def convert_to_timestamp(self, time_str):
+        if self.dataset == "book" or self.dataset == "news":
+            return int(datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp())
+        elif self.dataset == "movie":
+            return int(datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp())
+        else:
+            return None
+
     def preprocess_user_data(self):
         df = pd.read_csv(self.resource_path / USER_FILE, low_memory=False, sep="\t")
         df = df.dropna(subset=["impression"])
         df = df[["userid", "time", "impression"]]
+
+        df["time"] = df["time"].apply(lambda x: self.convert_to_timestamp(x))
 
         def has_positive_samples(impression):
             try:
@@ -122,6 +133,7 @@ class DataPreprocesser:
                 index=row.name,
                 id=row['userid']
             )
+            user.set_timestamp(row["time"])
 
             accept_list = []
             reject_list = []
@@ -149,91 +161,84 @@ class DataPreprocesser:
             logger.error(f"Error processing user {row.get('userid', 'unknown')}: {e}")
             return None
 
-
-def create_user_item_interactions(users: List[Any], items: List[Any]) -> Tuple[pd.DataFrame, Dict]:
+def create_user_item_interactions(
+    users: List[Any],
+    items: List[Any],
+) -> Tuple[pd.DataFrame, Dict, List[Any], List[Any]]:
     """
-    Create user-item interactions. Filtering items if they were not interacted by any of users.
-    Args:
-        users: List of User objects with accept_list and reject_list
-        items: List of all item objects
-
-    Returns:
-        tuple: (interactions_df, info_dict)
+    Build user-item interactions and return the filtered users/items and mappings.
     """
 
-    # Step 1: Find all items that have interactions
-    interacted_items = set()
+    def _item_id(x):
+        return getattr(x, "id", x)
 
-    for user in users:
-        # Collect items from accept_list (assuming accept_list contains item objects)
-        if hasattr(user, 'accept_list') and user.accept_list:
-            for item in user.accept_list:
-                # Handle both item objects and item IDs
-                if hasattr(item, 'id'):
-                    interacted_items.add(item.id)
-                else:
-                    # If it's already an ID
-                    interacted_items.add(item)
+    # 1) Collect all item IDs that appear in accept/reject lists
+    interacted_item_ids = set()
+    for u in users:
+        for itm in (getattr(u, "accept_list", []) or []):
+            interacted_item_ids.add(_item_id(itm))
+        for itm in (getattr(u, "reject_list", []) or []):
+            interacted_item_ids.add(_item_id(itm))
 
-        # Collect items from reject_list (assuming reject_list contains item objects)
-        if hasattr(user, 'reject_list') and user.reject_list:
-            for item in user.reject_list:
-                # Handle both item objects and item IDs
-                if hasattr(item, 'id'):
-                    interacted_items.add(item.id)
-                else:
-                    # If it's already an ID
-                    interacted_items.add(item)
+    # 2) Filter items
+    filtered_items = [it for it in items if _item_id(it) in interacted_item_ids]
+    filtered_item_ids = [_item_id(it) for it in filtered_items]
 
-    # Step 2: Filter items to only those with interactions
-    filtered_items = [item.id for item in items if item.id in interacted_items]
+    # 3) Build item mapping
+    item_to_index = {iid: idx for idx, iid in enumerate(filtered_item_ids)}
+    index_to_item = {idx: iid for iid, idx in item_to_index.items()}
 
-    # Step 3: Create new item mapping (indices will be re-assigned from 0)
-    item_to_index = {item_id: idx for idx, item_id in enumerate(filtered_items)}
-
-    # Step 4: Create interactions
+    # 4) Build user mapping (only keep active users with any interaction)
+    user_to_index = {}
+    index_to_user = {}
     interactions = []
+    user_counter = 0
 
-    for user in users:
-        user_idx = user.index
+    for u in users:
+        user_id = getattr(u, "id", getattr(u, "index", None)) or users.index(u)
+        u_idx = None
+        user_timestamp = getattr(u, "timestamp", None)
 
-        # Process accept_list
-        if hasattr(user, 'accept_list') and user.accept_list:
-            for item in user.accept_list:
-                # Get item ID whether it's an object or already an ID
-                item_id = item.id if hasattr(item, 'id') else item
+        # check interactions
+        user_interactions = []
+        for itm in (getattr(u, "accept_list", []) or []):
+            iid = _item_id(itm)
+            if iid in item_to_index:
+                user_interactions.append((iid, 1))
+        for itm in (getattr(u, "reject_list", []) or []):
+            iid = _item_id(itm)
+            if iid in item_to_index:
+                user_interactions.append((iid, 0))
 
-                if item_id in item_to_index:
-                    interactions.append({
-                        'user_index:token': user_idx,
-                        'item_index:token': item_to_index[item_id],
-                        'rating:float': 1
-                    })
+        if user_interactions:  # active user
+            u_idx = user_counter
+            user_to_index[user_id] = u_idx
+            index_to_user[u_idx] = user_id
+            user_counter += 1
 
-        # Process reject_list
-        if hasattr(user, 'reject_list') and user.reject_list:
-            for item in user.reject_list:
-                # Get item ID whether it's an object or already an ID
-                item_id = item.id if hasattr(item, 'id') else item
-
-                if item_id in item_to_index:
-                    interactions.append({
-                        'user_index:token': user_idx,
-                        'item_index:token': item_to_index[item_id],
-                        'rating:float': 0
-                    })
+            for iid, rating in user_interactions:
+                interactions.append({
+                    "user_id:token": u_idx,
+                    "item_id:token": item_to_index[iid],
+                    "label:float": rating,
+                    "timestamp:float": user_timestamp,
+                })
 
     df = pd.DataFrame(interactions)
 
     info = {
-        'original_item_count': len(items),
-        'filtered_item_count': len(filtered_items),
-        'removed_item_count': len(items) - len(filtered_items),
-        'total_interactions': len(df),
-        'positive_interactions': len(df[df['rating:float'] == 1]) if len(df) > 0 else 0,
-        'negative_interactions': len(df[df['rating:float'] == 0]) if len(df) > 0 else 0,
-        'active_users': df['user_index:token'].nunique() if len(df) > 0 else 0,
-        # 'item_to_index_mapping': item_to_index
+        "original_item_count": len(items),
+        "filtered_item_count": len(filtered_items),
+        "removed_item_count": len(items) - len(filtered_items),
+        "total_interactions": len(df),
+        "positive_interactions": int((df["label:float"] == 1).sum()) if len(df) else 0,
+        "negative_interactions": int((df["label:float"] == 0).sum()) if len(df) else 0,
+        "active_users": len(user_to_index),
+        "item_to_index": item_to_index,
+        "index_to_item": index_to_item,
+        "user_to_index": user_to_index,
+        "index_to_user": index_to_user,
     }
 
-    return df, info
+    filtered_users = [u for u in users if (getattr(u, "id", getattr(u, "index", None)) or users.index(u)) in user_to_index]
+    return df, info, filtered_users, filtered_items
