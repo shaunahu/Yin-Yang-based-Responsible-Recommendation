@@ -4,7 +4,7 @@ The original recommendation system class.
 from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
-from recbole.model.general_recommender import Pop, LightGCN
+from recbole.model.general_recommender import Pop, LightGCN, DGCF
 from recbole.trainer import Trainer
 
 from recbole.quick_start import load_data_and_model
@@ -81,8 +81,10 @@ class Recommender:
             rec_model = None
             if selected_method == 'LightGCN':
                 rec_model = LightGCN(recommender_config, train_data.dataset).to(recommender_config['device'])
-            if selected_method == 'Pop':
+            elif selected_method == 'Pop':
                 rec_model = Pop(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'DGCF':
+                rec_model = DGCF(recommender_config, train_data.dataset).to(recommender_config['device'])
 
             if rec_model:
                 logger.info(rec_model)

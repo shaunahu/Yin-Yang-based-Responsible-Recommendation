@@ -60,10 +60,18 @@ class Simulator:
             logger.info(f"Recommender: {self.recommender} | Starting from training...")
             rs.init_rs(rs.recommender)
             rs.load_saved_model()
-        user_token = np.array(list(self.user_item_info["index_to_user"].keys()))
-        for step in range(1, timesteps):
-            # start recommendation from RS
-            rs.make_recommendation(user_token)
+
+        # load user embedding and item embedding from model
+        model = rs.saved_model
+        if hasattr(model, 'user_embedding') and hasattr(model, 'item_embedding'):
+            user_embedding = model.user_embedding.weight.data.cpu().numpy()
+            item_embedding = model.item_embedding.weight.data.cpu().numpy()
+        else:
+            logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
+        # user_token = np.array(list(self.user_item_info["index_to_user"].keys()))
+        # for step in range(1, timesteps):
+        #     # start recommendation from RS
+        #     rs.make_recommendation(user_token)
         #     logger.info(f"Timestep {step}:")
 
 
