@@ -1,6 +1,5 @@
-"""
-User Agent model
-"""
+# user agent model
+import numpy as np
 class UserAgent:
     def __init__(self, index:int, id: str):
         self.index = index
@@ -8,6 +7,10 @@ class UserAgent:
         self.accept_list = []
         self.reject_list = []
         self.timestamp = None
+        self.belief = None
+
+    def set_belief(self, belief):
+        self.belief = np.array(belief)
 
     def set_timestamp(self, timestamp: float):
         self.timestamp = timestamp

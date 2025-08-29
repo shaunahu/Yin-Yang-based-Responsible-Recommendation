@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
+from common import logger
 
 from utils.utils import load_from_file, save_to_file
-from common.constants import GRAPH_CLUSTER_FILE, TEST_USER_FILE, TEST_FILTERED_USER_FILE
+from common.constants import GRAPH_CLUSTER_FILE, TEST_USER_FILE
 
 POSITIVE_WEIGHT = 1.0
 NEGATIVE_WEIGHT = -0.0
@@ -53,10 +54,10 @@ def split_impression_column(df: pd.DataFrame, valid_ids: set) -> pd.DataFrame:
     return df
 
 
-def main():
+def init_user_belief(user_file_path, user_belief_file_path):
     clusters, messages, message_cluster_map = get_cluster_from_graph()
 
-    user_behavior = pd.read_csv(TEST_USER_FILE, sep="\t")
+    user_behavior = pd.read_csv(user_file_path, sep="\t")
     users = split_impression_column(user_behavior, messages)
     impressions = users[["impression_1", "impression_0"]]
     num_clusters = len(set(clusters))
@@ -95,10 +96,7 @@ def main():
 
     # calculate avg belief
     avg_belief_distribution = np.mean(user_beliefs, axis=0)
-    print(f"Average belief distribution: {avg_belief_distribution}")
+    logger.debug(f"Average belief distribution: {avg_belief_distribution}")
 
-    users.to_csv("utils/users_with_belief.csv", index=False)
-
-
-if __name__ == "__main__":
-    main()
+    users.to_csv(user_belief_file_path, sep="\t", index=False)
+    logger.info(f"user belief initialised and saved to {user_belief_file_path}")

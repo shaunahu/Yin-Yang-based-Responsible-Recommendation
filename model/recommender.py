@@ -41,6 +41,8 @@ class Recommender:
         self.saved_config = None
         self.saved_model = None
         self.data = None
+        self.user_embedding = None
+        self.item_embedding = None
 
 
     def load_saved_model(self):
@@ -52,8 +54,32 @@ class Recommender:
             self.saved_config = config
             self.saved_model = model
             self.data = RSData(dataset, train_data, valid_data, test_data)
+
+            # get user embedding layer
+            if hasattr(model, 'user_embedding'):
+                user_embedding = model.user_embedding.weight.data.cpu().numpy()
+                user_id_map = dataset.field2id_token['user_id']
+                user_token2id = dataset.field2token_id['user_id']
+                # create user id-embedding mapping {id:embedding}, the id is the user agent id.
+                user_id_to_embedding = {}
+                for internal_id, original_id in enumerate(user_id_map):
+                    if internal_id < len(user_embedding):
+                        user_id_to_embedding[original_id] = user_embedding[internal_id]
+                self.user_embedding = user_embedding
+
+            # create item id-embedding mapping {id:embedding}, the id is the item id.
+            if hasattr(model, 'item_embedding'):
+                item_embedding = model.item_embedding.weight.data.cpu().numpy()
+                item_id_map = dataset.field2id_token['item_id']
+                item_token2id = dataset.field2token_id['item_id']
+                item_id_to_embedding = {}
+                for internal_id, original_id in enumerate(item_id_map):
+                    if internal_id < len(item_embedding):
+                        item_id_to_embedding[original_id] = item_embedding[internal_id]
+                self.item_embedding = item_id_to_embedding
         except Exception as e:
             logger.error(e)
+
 
     def make_recommendation(self, user_token):
         top_k = self.base_config.getint("recommender", "top_k")

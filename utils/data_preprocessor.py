@@ -8,8 +8,8 @@ from datetime import datetime
 
 from utils.utils import save_to_file, load_from_file
 from common.constants import (SELECTIVE_DATASETS, 
-                            ITEM_FILE, 
-                            USER_FILE, 
+                            ITEM_FILE,
+                            USER_BELIF_FILE,
                             ITEM_PICKLE_FILE, 
                             USER_PICKLE_FILE,
                             NUM_THREADS)
@@ -101,9 +101,9 @@ class DataPreprocesser:
             return None
 
     def preprocess_user_data(self):
-        df = pd.read_csv(self.resource_path / USER_FILE, low_memory=False, sep="\t")
+        df = pd.read_csv(self.resource_path / USER_BELIF_FILE, low_memory=False, sep="\t")
         df = df.dropna(subset=["impression"])
-        df = df[["userid", "time", "impression"]]
+        df = df[["userid", "time", "impression", "belief"]]
 
         df["time"] = df["time"].apply(lambda x: self.convert_to_timestamp(x))
 
@@ -154,6 +154,8 @@ class DataPreprocesser:
 
             user.accept_list = accept_list
             user.reject_list = reject_list
+
+            user.set_belief(row['belief'])
 
             return user
 
