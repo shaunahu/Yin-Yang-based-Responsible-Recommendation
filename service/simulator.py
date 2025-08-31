@@ -76,11 +76,12 @@ class Simulator:
             logger.info(f"User_embedding: {user_embedding} | Item_embedding: {item_embedding}")
         else:
             logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
-        # user_token = np.array(list(self.user_item_info["index_to_user"].keys()))
-        # for step in range(1, timesteps):
-        #     # start recommendation from RS
-        #     rs.make_recommendation(user_token)
-        #     logger.info(f"Timestep {step}:")
+
+        user_id_series = np.array(list(self.user_item_info["index_to_user"].keys()))
+        for step in range(1, timesteps):
+            # start recommendation from RS
+            rs.make_recommendation(user_id_series)
+            logger.info(f"Timestep {step}:")
 
 
 if __name__ == "__main__":

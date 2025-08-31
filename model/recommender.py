@@ -18,6 +18,7 @@ from common import logger
 from config.config import RSConfig
 import os
 from dataclasses import dataclass
+from utils.utils import save_to_file
 
 @dataclass
 class RSData:
@@ -66,6 +67,7 @@ class Recommender:
                     if internal_id < len(user_embedding):
                         user_id_to_embedding[original_id] = user_embedding[internal_id]
                 self.user_embedding = user_embedding
+                save_to_file(user_id_to_embedding, self.config.base_path / "saved" / 'user_embedding.pkl')
 
             # create item id-embedding mapping {id:embedding}, the id is the item id.
             if hasattr(model, 'item_embedding'):
@@ -77,17 +79,16 @@ class Recommender:
                     if internal_id < len(item_embedding):
                         item_id_to_embedding[original_id] = item_embedding[internal_id]
                 self.item_embedding = item_id_to_embedding
+                save_to_file(item_id_to_embedding, self.config.base_path / "saved" / 'item_embedding.pkl')
         except Exception as e:
             logger.error(e)
 
 
-    def make_recommendation(self, user_token):
+    def make_recommendation(self, user_id_series):
         top_k = self.base_config.getint("recommender", "top_k")
 
         test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
-        user_token = test_users.numpy()[:10]
-
-        topk_score, topk_iid_list = full_sort_topk(user_token, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
+        topk_score, topk_iid_list = full_sort_topk(user_id_series, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
 
         print(topk_iid_list)
 

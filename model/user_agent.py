@@ -1,5 +1,6 @@
 # user agent model
 import numpy as np
+import random
 class UserAgent:
     def __init__(self, index:int, id: str):
         self.index = index
@@ -25,8 +26,11 @@ class UserAgent:
         return f"User {self.index}: {self.id}"
 
     def make_decision(self):
-        # TODO
-        pass
+        # a mock function to simulate user decision-making behaviour
+        if random.random() < 0.5:
+            return False
+        else:
+            return True
 
     def update_beliefs(self):
         # TODO
