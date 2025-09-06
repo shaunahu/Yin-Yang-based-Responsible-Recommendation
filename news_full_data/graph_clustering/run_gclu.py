@@ -22,7 +22,6 @@ REPEATS = 5
 SEED = 123
 # ----------------------------------------
 
-
 def resolve_feature_columns(meta, requested_weights):
     """Map friendly feature names -> (col_index, weight) using features_meta.json (with aliases)."""
     feats = meta.get("features", {})
