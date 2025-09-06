@@ -3,38 +3,39 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-# ========= 配置 =========
+# ========= Config =========
 ID_COL = "item_id"
-FEATURE_DTYPE = np.float16   # 可改为 np.uint8 / np.float32
+FEATURE_DTYPE = np.float16   # change to np.uint8 / np.float32 if needed
 OUT_DIR_NAME = "news_full_dataset_graph_data"
 SRC_FILENAME = "edges_src_int32.npy"
 DST_FILENAME = "edges_dst_int32.npy"
 FEAT_FILENAME = "edge_feats.npy"     # shape: (m, 4)
-BATCH_ROWS = 2000                    # 以 i 为行块大小，按需调整（越大越快但更占内存）
+BATCH_ROWS = 2000                    # number of rows processed at once (larger = faster but uses more memory)
 
 def compute_edge_features_batch(node_ids_left: np.ndarray,
                                 node_ids_right: np.ndarray) -> np.ndarray:
     """
-    你要实现的边特征计算函数（批量版）。
-    参数：
-      node_ids_left:  shape (cnt,)   左端节点的“全局索引 i”或 ID
-      node_ids_right: shape (cnt,)   右端节点的“全局索引 j”或 ID
-    返回：
+    Implement your edge feature calculation function (batched version).
+    Parameters:
+      node_ids_left:  shape (cnt,)   global indices or IDs of left endpoints
+      node_ids_right: shape (cnt,)   global indices or IDs of right endpoints
+    Returns:
       feats: shape (cnt, 4), dtype = FEATURE_DTYPE
     """
-    # === 示例：全零特征（请替换为你的特征计算逻辑） ===
+    # === Example placeholder ===
     feats = np.zeros((len(node_ids_left), 4), dtype=FEATURE_DTYPE)
     return feats
 
 def main():
-    # 目录
+    # Base directories (relative to this script under utils/)
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, "data_news")
-    OUT_DIR  = os.path.join(BASE_DIR, OUT_DIR_NAME)
+    DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data_news"))
+    OUT_DIR  = os.path.abspath(os.path.join(BASE_DIR, "..", OUT_DIR_NAME))
+
     if not os.path.isdir(OUT_DIR):
         raise FileNotFoundError(f"Output directory not found: {OUT_DIR}")
 
-    # 读取节点
+    # Load items
     csv_path = os.path.join(DATA_DIR, "items_filtered.csv")
     df = pd.read_csv(csv_path, dtype=str)
     if ID_COL not in df.columns:
@@ -45,11 +46,11 @@ def main():
     m = n * (n - 1) // 2
     print(f"nodes={n:,}, edges={m:,}")
 
-    # 保存节点顺序（方便回查）
+    # Save node order for consistent edge mapping
     nodes_npy = os.path.join(OUT_DIR, "nodes.npy")
     np.save(nodes_npy, np.array(nodes, dtype=object))
 
-    # 创建 memmap 文件
+    # Create memmap files for edges and features
     src_path = os.path.join(OUT_DIR, SRC_FILENAME)
     dst_path = os.path.join(OUT_DIR, DST_FILENAME)
     feat_path = os.path.join(OUT_DIR, FEAT_FILENAME)
@@ -58,26 +59,24 @@ def main():
     dst_mm  = np.memmap(dst_path,  dtype=np.int32,   mode="w+", shape=(m,))
     feat_mm = np.memmap(feat_path, dtype=FEATURE_DTYPE, mode="w+", shape=(m, 4))
 
-    # 逐块写入上三角 (i < j)
+    # Iterate over the upper triangle (i < j), writing in row-block batches
     cursor = 0
     with tqdm(total=m, desc="Writing edges & feats") as pbar:
-        # 按“行块”分批（i 从 0..n-2）
         for i_block_start in range(0, n - 1, BATCH_ROWS):
-            i_block_end = min(n - 1, i_block_start + BATCH_ROWS)  # i 取到 n-2
-            # 对每一个 i，j 从 i+1..n-1
+            i_block_end = min(n - 1, i_block_start + BATCH_ROWS)
             for i in range(i_block_start, i_block_end):
                 j_count = n - (i + 1)
                 if j_count <= 0:
                     continue
 
-                # 当前批的 j 索引
+                # Indices for j in this row
                 j_idx = np.arange(i + 1, n, dtype=np.int32)
 
-                # 写 src/dst
+                # Write src and dst
                 src_mm[cursor: cursor + j_count] = i
                 dst_mm[cursor: cursor + j_count] = j_idx
 
-                # 计算特征并写入（把“索引 i 与 j_idx”传给你的特征函数）
+                # Compute features for this batch
                 feats = compute_edge_features_batch(
                     node_ids_left=np.full((j_count,), i, dtype=np.int32),
                     node_ids_right=j_idx
@@ -89,7 +88,7 @@ def main():
                 cursor += j_count
                 pbar.update(j_count)
 
-    # flush 到磁盘
+    # Flush data to disk
     src_mm.flush()
     dst_mm.flush()
     feat_mm.flush()

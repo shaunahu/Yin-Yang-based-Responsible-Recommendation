@@ -2,7 +2,11 @@ resource/
 graph/data/
 news_full_data/data_news/
 news_full_data/data_features/
+news_full_data/edge_data/
 news_full_data/news_full_dataset_graph_data/
+news_full_data/newsGraph/
+news_full_data/saved_clusters/
+news_full_data/saved_clusters/
 .history
 graph/community_output/
 __pycache__
