@@ -1,0 +1,21 @@
+{
+  "tag": "K5_topk5",
+  "num_nodes": 19130,
+  "num_edges_kept": 156569,
+  "num_clusters": 5,
+  "repeats": 5,
+  "seed": 123,
+  "topk": 5,
+  "feature_weights": {
+    "semantic_similarity": 0.4,
+    "topic_similarity": 0.3,
+    "sentiment_similarity": 0.2,
+    "frequent": 0.1
+  },
+  "feature_cols": {
+    "semantic_similarity": 2,
+    "topic_similarity": 3,
+    "sentiment_similarity": 1,
+    "frequent": 0
+  }
+}
