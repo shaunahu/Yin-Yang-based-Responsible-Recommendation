@@ -10,6 +10,7 @@ from recbole.trainer import Trainer
 from recbole.quick_start import load_data_and_model
 from recbole.utils.case_study import full_sort_topk
 
+from datetime import datetime
 from typing import List, Any
 from model.item import Item
 from model.user_agent import UserAgent
@@ -88,9 +89,22 @@ class Recommender:
         top_k = self.base_config.getint("recommender", "top_k")
 
         test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
-        topk_score, topk_iid_list = full_sort_topk(user_id_series, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
+        topk_score, topk_iid_list = full_sort_topk(test_users, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
 
-        print(topk_iid_list)
+        # convert to external id
+        external_user_ids = self.data.dataset.id2token(self.data.dataset.uid_field, test_users.cpu())
+
+        all_external_recommendations = []
+        for i, user_topk_iids in enumerate(topk_iid_list):
+            external_items = self.data.dataset.id2token(self.data.dataset.iid_field, user_topk_iids.cpu())
+            external_user_id = external_user_ids[i]
+            all_external_recommendations.append({
+                'user_id': external_user_id,
+                'recommended_items': external_items
+            })
+        print(all_external_recommendations)
+
+        save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
 
     def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
@@ -120,6 +134,19 @@ class Recommender:
 
                 # model training
                 best_valid_score, best_valid_result = trainer.fit(train_data, valid_data)
+
+                # model evaluation
+                test_result = trainer.evaluate(test_data)
+                # save to file
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                with open("recbole_results.log", "a") as f:
+                    f.write("=" * 50 + "\n")
+                    f.write(f"Model: {selected_method}\n")
+                    f.write(f"Time: {now}\n")
+                    f.write(f"Best validation score: {best_valid_score}\n")
+                    f.write(f"Validation result: {best_valid_result}\n")
+                    f.write(f"Test result: {test_result}\n")
+                    f.write("=" * 50 + "\n")
 
                 import gc
                 del trainer, train_data, valid_data, test_data
