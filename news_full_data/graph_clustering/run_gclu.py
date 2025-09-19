@@ -10,7 +10,7 @@ SAVED_DIR = os.path.abspath(os.path.join(HERE, "..", "saved_clusters"))
 
 # Choose/weight edge feature columns (resolved via features_meta.json)
 FEATURE_WEIGHTS = {
-    "semantic_similarity": 0.4,        # alias: semantic_similarity_ta
+    "semantic_similarity": 0.4,        # alias: semantic_similarity
     "topic_similarity":     0.3,
     "sentiment_similarity": 0.2,
     "frequent":             0.1        # alias: impression_cooccurrence_prob
@@ -26,7 +26,7 @@ def resolve_feature_columns(meta, requested_weights):
     """Map friendly feature names -> (col_index, weight) using features_meta.json (with aliases)."""
     feats = meta.get("features", {})
     aliases = {
-        "semantic_similarity": ["semantic_similarity", "semantic_similarity_ta"],
+        "semantic_similarity": ["semantic_similarity", "semantic_similarity"],
         "topic_similarity": ["topic_similarity"],
         "sentiment_similarity": ["sentiment_similarity"],
         "frequent": ["frequent", "impression_cooccurrence_prob"],
