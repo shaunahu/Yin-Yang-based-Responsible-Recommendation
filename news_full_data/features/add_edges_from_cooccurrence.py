@@ -21,7 +21,7 @@ def main(min_count: int, overwrite: bool):
 
     if overwrite:
         GRAPH_OUT = GRAPH_IN
-        META_OUT  = os.path.join(GRAPH_DIR, "graph_meta.json")
+        META_OUT  = os.path.join(GRAPH_DIR, "graph_with_edges_meta.json")
 
     # ---- load graph ----
     if not os.path.exists(GRAPH_IN):

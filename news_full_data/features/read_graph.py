@@ -11,7 +11,7 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Preview edges from graph_with_edges.pkl")
     ap.add_argument("--graph", default="../newsGraph/graph_with_edges.pkl",
                     help="Path to graph_with_edges.pkl")
-    ap.add_argument("-n", type=int, default=10,
+    ap.add_argument("-n", type=int, default=101,
                     help="Number of edges to preview (default: 10)")
     return ap.parse_args()
 

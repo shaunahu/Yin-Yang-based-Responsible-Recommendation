@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # add_topic_to_graph_from_graph.py
-# Insert topic similarity into an existing NetworkX graph_with_edges.pkl
+# Insert topic similarity into an existing NetworkX graph.pkl
 # Sep 19,2025
 
 import os
@@ -107,9 +107,9 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Add topic similarity to existing edges in a NetworkX graph.")
     ap.add_argument("--items_csv", default=default_data, help="Path to items_filtered.csv")
     ap.add_argument("--topic_sim", default=default_edge, help="Path to news_topic_similarity_normalized.txt")
-    ap.add_argument("--graph_in", default=os.path.join(default_graph_dir, "graph_with_edges.pkl"),
-                    help="Input graph (default: newsGraph/graph_with_edges.pkl)")
-    ap.add_argument("--graph_out", default=os.path.join(default_graph_dir, "graph_with_edges.pkl"),
+    ap.add_argument("--graph_in", default=os.path.join(default_graph_dir, "graph.pkl"),
+                    help="Input graph (default: newsGraph/graph.pkl)")
+    ap.add_argument("--graph_out", default=os.path.join(default_graph_dir, "graph.pkl"),
                     help="Output graph (default: overwrite input)")
     ap.add_argument("--meta_out", default=os.path.join(default_graph_dir, "graph_with_edges_meta.json"),
                     help="Path to metadata JSON")

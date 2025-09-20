@@ -189,9 +189,9 @@ def parse_args():
 
     ap = argparse.ArgumentParser(description="Add sentiment similarity to existing edges in a NetworkX graph.")
     ap.add_argument("--items_csv", default=default_data, help="Path to items_filtered.csv")
-    ap.add_argument("--graph_in",  default=os.path.join(default_graph_dir, "graph_with_edges.pkl"),
-                    help="Input graph (with nodes+edges). Default: newsGraph/graph_with_edges.pkl")
-    ap.add_argument("--graph_out", default=os.path.join(default_graph_dir, "graph_with_edges.pkl"),
+    ap.add_argument("--graph_in",  default=os.path.join(default_graph_dir, "graph.pkl"),
+                    help="Input graph (with nodes+edges). Default: newsGraph/graph.pkl")
+    ap.add_argument("--graph_out", default=os.path.join(default_graph_dir, "graph.pkl"),
                     help="Output graph path (default overwrites input)")
     ap.add_argument("--meta_out",  default=os.path.join(default_graph_dir, "graph_with_edges_meta.json"),
                     help="Metadata JSON path to update")
