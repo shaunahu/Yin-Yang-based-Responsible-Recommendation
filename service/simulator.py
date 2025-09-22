@@ -18,7 +18,7 @@ class Simulator:
         self.config = ConfigUtil().get_config()
         self.recommender = self.config.get("simulation", "recommender")
 
-        self.data_preprocesser()
+        self.create_data_preprocesser()
 
         logger.info("=" * 50)
         logger.info("Initialise simulator...")
@@ -26,7 +26,7 @@ class Simulator:
         logger.info(f"Selected recommender: {self.recommender}")
         logger.info("=" * 50)
     
-    def data_preprocesser(self):
+    def create_data_preprocesser(self):
         dataset = self.config.get("simulation", "dataset")
         data_preprocesser = DataPreprocesser(dataset)
 
@@ -53,7 +53,7 @@ class Simulator:
         logger.info("=" * 50)
         data_preprocesser.create_atomic_file(inter)
 
-    def run(self):
+    def run_recommender(self):
         logger.info("\n" + "=" * 50)
         timesteps = self.config.getint("simulation", "timesteps")
 
@@ -70,27 +70,22 @@ class Simulator:
 
         # load user embedding and item embedding from model
         model = rs.saved_model
-        if hasattr(model, 'user_embedding') and hasattr(model, 'item_embedding'):
-            user_embedding = rs.user_embedding
-            item_embedding = rs.item_embedding
-            logger.info(f"User_embedding: {user_embedding} | Item_embedding: {item_embedding}")
-        else:
+        if not (hasattr(model, 'user_embedding') and hasattr(model, 'item_embedding')):
             logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
-        # user_token = np.array(list(self.user_item_info["index_to_user"].keys()))
-        # for step in range(1, timesteps):
-        #     # start recommendation from RS
-        #     rs.make_recommendation(user_token)
-        #     logger.info(f"Timestep {step}:")
 
+        user_id_series = np.array(list(self.user_item_info["index_to_user"].keys()))
+        rs.make_recommendation(user_id_series)
+
+    def run(self):
+        # todo
+        pass
 
 if __name__ == "__main__":
     simulator = Simulator()
 
-    # this is a line for test RS
-    simulator.run()
-
-    # rounds = simulator.config.getint("simulation", "rounds")
-    #
-    # for r in range(rounds):
-    #     logger.info(f"Round {r}:")
-    #     simulator.run()
+    # this is the entry point line for running RS
+    # including: prepare train/validation/test sets
+    # train RS
+    # evaluate RS (result saved in `recbole_result.log`
+    # and make recommendation
+    simulator.run_recommender()

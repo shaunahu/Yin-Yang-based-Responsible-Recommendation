@@ -1,6 +1,7 @@
 from pathlib import Path
 from configparser import ConfigParser
 from utils.utils import ConfigUtil
+import torch
 
 from common import logger
 
@@ -42,6 +43,7 @@ class RSConfig(BaseConfig):
         'epochs': base_config.getint("recommender", "epochs"),
         # 'stopping_step': 10,
         'learning_rate': base_config.getfloat("recommender", "learning_rate"),
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
 
         # evaluation parameter settings
         'eval_args': {
