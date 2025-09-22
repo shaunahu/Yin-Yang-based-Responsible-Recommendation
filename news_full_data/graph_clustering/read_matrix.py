@@ -1,58 +1,66 @@
 #!/usr/bin/env python3
-# read_matrix.py — load cluster_matrix and manifest, query item_id <-> cluster_id
+# cluster_reader.py — reusable class to load cluster_matrix and manifest
 
 import os
 import json
-import argparse
 import torch
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--matrix", required=True, help="Path to cluster_matrix_K*_topk*.pt")
-    ap.add_argument("--manifest", required=True, help="Path to cluster_matrix_manifest_K*_topk*.json")
-    ap.add_argument("--query_item", help="Query which cluster this item_id belongs to")
-    ap.add_argument("--query_cluster", type=int, help="Query all items in this cluster_id")
-    args = ap.parse_args()
+class ClusterReader:
+    def __init__(self, matrix_path: str, manifest_path: str):
+        # ---- load matrix ----
+        if not os.path.exists(matrix_path):
+            raise FileNotFoundError(f"Matrix file not found: {matrix_path}")
+        self.matrix = torch.load(matrix_path)
+        print(f"[INFO] Matrix loaded: type={type(self.matrix)}, shape={self.matrix.shape}")
 
-    # ---- load matrix ----
-    M = torch.load(args.matrix)
-    print(f"[INFO] Matrix loaded: type={type(M)}, shape={M.shape}")
+        # ---- load manifest ----
+        if not os.path.exists(manifest_path):
+            raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
+        with open(manifest_path, "r") as f:
+            meta = json.load(f)
 
-    # ---- load manifest ----
-    with open(args.manifest, "r") as f:
-        meta = json.load(f)
-    item_to_cluster = meta.get("item_to_cluster", {})
-    cluster_to_items = meta.get("cluster_to_items", {})
+        self.item_to_cluster = meta.get("item_to_cluster", {})
+        self.cluster_to_items = meta.get("cluster_to_items", {})
+        self.num_clusters = len(self.cluster_to_items)
 
-    # ---- query by item ----
-    if args.query_item:
-        cid = item_to_cluster.get(args.query_item)
-        if cid is None:
-            print(f"[QUERY] item_id {args.query_item} not found in manifest.")
-        else:
-            print(f"[QUERY] item_id {args.query_item} belongs to cluster {cid}")
+    def get_cluster_of_item(self, item_id: str):
+        """Return cluster_id of a given item_id (or None if not found)."""
+        return self.item_to_cluster.get(item_id)
 
-    # ---- query by cluster ----
-    if args.query_cluster is not None:
-        items = cluster_to_items.get(str(args.query_cluster), [])
-        print(f"[QUERY] cluster {args.query_cluster} has {len(items)} items")
-        if len(items) < 20:  # only print small clusters
-            print(items[:20])
-        else:
-            print("... (too many items to print)")
+    def get_items_in_cluster(self, cluster_id: int):
+        """Return list of all item_ids in a given cluster."""
+        return self.cluster_to_items.get(str(cluster_id), [])
 
+    def get_cluster_vector(self, cluster_id: int):
+        """Return the cluster row vector from the PyTorch matrix."""
+        if cluster_id < 0 or cluster_id >= self.num_clusters:
+            raise ValueError(f"Cluster id {cluster_id} out of range (0..{self.num_clusters-1})")
+        return self.matrix[cluster_id]
+
+    def summary(self):
+        """Print a short summary of clusters."""
+        print(f"[SUMMARY] {self.num_clusters} clusters available.")
+        for cid, items in self.cluster_to_items.items():
+            print(f" - Cluster {cid}: {len(items)} items")
+
+# ---------------- Example Usage ----------------
 if __name__ == "__main__":
-    main()
+    # 手动改成你的路径
+    matrix_path = "../saved_clusters/cluster_matrix_K5_topk5.pt"
+    manifest_path = "../saved_clusters/cluster_matrix_manifest_K5_topk5.json"
 
-# # 查 item_id=12345 属于哪个 cluster
-# python read_matrix.py \
-#   --matrix ../saved_clusters/cluster_matrix_K5_topk5.pt \
-#   --manifest ../saved_clusters/cluster_matrix_manifest_K5_topk5.json \
-#   --query_item 12345
+    reader = ClusterReader(matrix_path, manifest_path)
+    reader.summary()
 
-# # 查 cluster 0 里的所有 item_id
-# python read_matrix.py \
-#   --matrix ../saved_clusters/cluster_matrix_K5_topk5.pt \
-#   --manifest ../saved_clusters/cluster_matrix_manifest_K5_topk5.json \
-#   --query_cluster 0
+    # 查 item_id 属于哪个 cluster
+    item_id = "12345"
+    print(f"Item {item_id} -> cluster {reader.get_cluster_of_item(item_id)}")
 
+    # 查 cluster 0 里的所有 items
+    cluster_id = 0
+    items = reader.get_items_in_cluster(cluster_id)
+    print(f"Cluster {cluster_id} has {len(items)} items, first few: {items[:10]}")
+
+    # 取 cluster 0 的向量
+    vec = reader.get_cluster_vector(cluster_id)
+    print(f"Cluster {cluster_id} vector shape: {vec.shape}")
