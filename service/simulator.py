@@ -1,4 +1,5 @@
 import numpy as np
+import json
 
 from common import logger
 from common.constants import ITEM_PICKLE_FILE, USER_PICKLE_FILE, USER_FILE, USER_BELIF_FILE
@@ -76,10 +77,6 @@ class Simulator:
         user_id_series = np.array(list(self.user_item_info["index_to_user"].keys()))
         rs.make_recommendation(user_id_series)
 
-    def run(self):
-        # todo
-        pass
-
 if __name__ == "__main__":
     simulator = Simulator()
 
@@ -89,3 +86,10 @@ if __name__ == "__main__":
     # evaluate RS (result saved in `recbole_result.log`
     # and make recommendation
     simulator.run_recommender()
+    # save user-id-token-mapping to file
+    user_id_mapping = {}
+    for user in simulator.users:
+        user_id_mapping[user.id] = user.index
+
+    with open('user_token_map.json', 'w') as f:
+        json.dump(user_id_mapping, f, indent=4)
