@@ -1,6 +1,8 @@
 """
 The original recommendation system class.
 """
+import json
+
 from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
@@ -85,7 +87,7 @@ class Recommender:
             logger.error(e)
 
 
-    def make_recommendation(self, user_id_series):
+    def make_recommendation(self):
         top_k = self.base_config.getint("recommender", "top_k")
 
         test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
@@ -102,7 +104,13 @@ class Recommender:
                 'user_id': external_user_id,
                 'recommended_items': external_items
             })
-        print(all_external_recommendations)
+
+        user_id_mapping = {}
+        for external_user_id in external_user_ids:
+            for user in self.users:
+                user_id_mapping[user.id] = external_user_id
+        with open('user_token_map.json', 'w') as f:
+            json.dump(user_id_mapping, f, indent=4)
 
         save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
 

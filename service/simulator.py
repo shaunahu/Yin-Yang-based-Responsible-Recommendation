@@ -75,7 +75,7 @@ class Simulator:
             logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
 
         user_id_series = np.array(list(self.user_item_info["index_to_user"].keys()))
-        rs.make_recommendation(user_id_series)
+        rs.make_recommendation()
 
 if __name__ == "__main__":
     simulator = Simulator()
@@ -86,10 +86,3 @@ if __name__ == "__main__":
     # evaluate RS (result saved in `recbole_result.log`
     # and make recommendation
     simulator.run_recommender()
-    # save user-id-token-mapping to file
-    user_id_mapping = {}
-    for user in simulator.users:
-        user_id_mapping[user.id] = user.index
-
-    with open('user_token_map.json', 'w') as f:
-        json.dump(user_id_mapping, f, indent=4)
