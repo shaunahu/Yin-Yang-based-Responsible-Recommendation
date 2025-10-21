@@ -105,12 +105,12 @@ class Recommender:
                 'recommended_items': external_items
             })
 
-        user_id_mapping = {}
-        for external_user_id in external_user_ids:
-            for user in self.users:
-                user_id_mapping[user.id] = external_user_id
-        with open('user_token_map.json', 'w') as f:
-            json.dump(user_id_mapping, f, indent=4)
+        # user_id_mapping = {}
+        # for external_user_id in external_user_ids:
+        #     for user in self.users:
+        #         user_id_mapping[user.id] = external_user_id
+        # with open('user_token_map.json', 'w') as f:
+        #     json.dump(user_id_mapping, f, indent=4)
 
         save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
 
