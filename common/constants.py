@@ -1,4 +1,4 @@
-SELECTIVE_METHODS = ["Pop", "LightGCN", "DGCF"]
+SELECTIVE_METHODS = ["LightGCN", "DGCF", "NGCF", "SGL", "ENMF", "DiffRec", "NCL", "LDiffRec"]
 SELECTIVE_DATASETS = ["movie", "book", "news"]
 ITEM_FILE = "items.tsv"
 ITEM_PICKLE_FILE = "items.pkl"
