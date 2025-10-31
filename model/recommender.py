@@ -6,7 +6,7 @@ import json
 from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
-from recbole.model.general_recommender import Pop, LightGCN, DGCF
+from recbole.model.general_recommender import Pop, LightGCN, NGCF, DGCF, SGL, ENMF, DiffRec, NCL, LDiffRec
 from recbole.trainer import Trainer
 
 from recbole.quick_start import load_data_and_model
@@ -134,6 +134,19 @@ class Recommender:
                 rec_model = Pop(recommender_config, train_data.dataset).to(recommender_config['device'])
             elif selected_method == 'DGCF':
                 rec_model = DGCF(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'NGCF':
+                rec_model = NGCF(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'SGL':
+                rec_model = SGL(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'ENMF':
+                rec_model = ENMF(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'DiffRec':
+                rec_model = DiffRec(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == 'NCL':
+                rec_model = NCL(recommender_config, train_data.dataset).to(recommender_config['device'])
+            elif selected_method == "LDiffRec":
+                rec_model = LDiffRec(recommender_config, train_data.dataset).to(recommender_config['device'])
+
 
             if rec_model:
                 logger.info(rec_model)
