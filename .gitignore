@@ -13,3 +13,6 @@ __pycache__
 *.pyc
 log
 log_tensorboard
+movie_full_data/data_movie/
+moviesGraph
+movie_full_data/edge_data/
