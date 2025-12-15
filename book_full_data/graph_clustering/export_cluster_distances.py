@@ -28,39 +28,89 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.abspath(os.path.join(HERE, "..", "saved_clusters"))
 
+
 def load_graph(path):
     with open(path, "rb") as f:
         return pickle.load(f)
 
+
 def recompute_per_cluster_distances(G, centers):
     """
-    For each cluster center node, run unweighted SSSP to its cluster.
-    Returns: rows = list of dicts with {cluster, node, distance_to_center}
+    Distances computed within each cluster-induced subgraph.
+    If the given center is not in the largest connected component, choose a fallback center there.
+    Nodes not in the giant component get -1 (unreachable from chosen center).
     """
-    # Build cluster -> items from node attribute "cluster"
     cluster_nodes = defaultdict(list)
     for n in G.nodes():
         cid = G.nodes[n].get("cluster")
-        if cid is None:
-            continue
-        cluster_nodes[int(cid)].append(n)
+        if cid is not None:
+            cluster_nodes[int(cid)].append(n)
 
     rows = []
     for cid, center in centers.items():
+        cid = int(cid)
         if center is None:
             continue
-        nodes_in_cluster = set(cluster_nodes[int(cid)])
-        # single-source unweighted shortest path lengths
-        lengths = nx.single_source_shortest_path_length(G, source=center)
-        # keep only nodes of this cluster
+
+        nodes_in_cluster = cluster_nodes.get(cid, [])
+        if not nodes_in_cluster:
+            continue
+
+        # cluster-induced subgraph
+        H = G.subgraph(nodes_in_cluster)
+
+        # find connected components (H is undirected in your case)
+        comps = list(nx.connected_components(H))
+        if not comps:
+            # empty / pointless
+            for n in nodes_in_cluster:
+                rows.append({"cluster": cid, "node": str(n), "distance_to_center": -1})
+            continue
+
+        giant = max(comps, key=len)
+
+        # ensure center is in giant component; otherwise pick a reasonable fallback center
+        if center not in giant:
+            Hg = H.subgraph(giant)
+            center = max(Hg.nodes(), key=lambda x: Hg.degree(x))
+
+        # compute distances within the giant component subgraph
+        Hg = H.subgraph(giant)
+        lengths = nx.single_source_shortest_path_length(Hg, source=center)
+
+        giant_set = set(giant)
         for n in nodes_in_cluster:
-            d = lengths.get(n, None)
-            if d is None:
-                # unreachable from center inside the same connected component
-                rows.append({"cluster": int(cid), "node": str(n), "distance_to_center": -1})
+            if n in giant_set:
+                rows.append({"cluster": cid, "node": str(n), "distance_to_center": int(lengths[n])})
             else:
-                rows.append({"cluster": int(cid), "node": str(n), "distance_to_center": int(d)})
+                rows.append({"cluster": cid, "node": str(n), "distance_to_center": -1})
+
     return rows
+
+
+
+def print_debug_graph_info(G):
+    """Print graph-level and per-cluster connectivity diagnostics."""
+    print(f"[DEBUG] Graph is directed: {G.is_directed()}")
+    print(f"[DEBUG] #nodes = {G.number_of_nodes()}, #edges = {G.number_of_edges()}")
+
+    # Build cluster -> nodes
+    cluster_nodes = defaultdict(list)
+    for n in G.nodes():
+        cid = G.nodes[n].get("cluster")
+        if cid is not None:
+            cluster_nodes[int(cid)].append(n)
+
+    # Connectivity by cluster (using undirected view for component counting)
+    for cid, nodes in sorted(cluster_nodes.items(), key=lambda x: x[0]):
+        H = G.subgraph(nodes)
+        Hu = H.to_undirected(as_view=True) if H.is_directed() else H
+        try:
+            comps = nx.number_connected_components(Hu)
+        except nx.NetworkXPointlessConcept:
+            comps = 0
+        print(f"[DEBUG] Cluster {cid}: size={len(nodes)}, connected_components={comps}")
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -69,6 +119,8 @@ def main():
                     help="Force recompute distances from clustered graph .pkl instead of using pre-saved distances.")
     ap.add_argument("--save-tensor", action="store_true",
                     help="Also save a tensor aligned to nodes_order_{tag}.txt")
+    ap.add_argument("--debug", action="store_true",
+                    help="Print debug info: directedness + per-cluster connected components.")
     args = ap.parse_args()
 
     tag = args.tag
@@ -80,7 +132,10 @@ def main():
     csv_out_fp       = os.path.join(OUT_DIR, f"cluster_node_distances_{tag}.csv")
 
     # Prefer fast path: load precomputed distances vector and expand to rows
-    if not args.recompute and os.path.exists(dist_tensor_base + ".pt") and os.path.exists(nodes_order_fp) and os.path.exists(centers_json_fp):
+    if (not args.recompute
+        and os.path.exists(dist_tensor_base + ".pt")
+        and os.path.exists(nodes_order_fp)
+        and os.path.exists(centers_json_fp)):
         try:
             import torch
             dist_vec = torch.load(dist_tensor_base + ".pt", map_location="cpu").numpy()
@@ -88,10 +143,14 @@ def main():
                 nodes_order = [line.strip() for line in f]
             with open(centers_json_fp, "r", encoding="utf-8") as f:
                 centers = json.load(f)  # {cluster_id: center_node}
+
             # Need cluster id per node → read from graph (lightweight)
             if not os.path.exists(graph_pkl_fp):
                 raise FileNotFoundError(f"Missing graph file needed to map node->cluster: {graph_pkl_fp}")
             G = load_graph(graph_pkl_fp)
+
+            if args.debug:
+                print_debug_graph_info(G)
 
             rows = []
             for idx, n in enumerate(nodes_order):
@@ -132,6 +191,10 @@ def main():
             centers[int(cid)] = max(ns, key=lambda x: G_tmp.degree(x))
 
     G = load_graph(graph_pkl_fp)
+
+    if args.debug:
+        print_debug_graph_info(G)
+
     rows = recompute_per_cluster_distances(G, centers)
     df = pd.DataFrame(rows, columns=["cluster", "node", "distance_to_center"])
     df.sort_values(["cluster", "distance_to_center", "node"], inplace=True, kind="mergesort")
@@ -161,6 +224,7 @@ def main():
         except Exception as e:
             np.save(dist_tensor_base + ".npy", vec)
             print(f"ℹ️ Torch unavailable; saved numpy: {dist_tensor_base}.npy  ({e})")
+
 
 if __name__ == "__main__":
     main()

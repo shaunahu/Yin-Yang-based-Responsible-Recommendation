@@ -1,54 +1,88 @@
-#!/usr/bin/env python3
-# read_graph.py
-# Preview edges from booksGraph/{graph.pkl | graph_with_edges.pkl}
-
+# create_item_graph.py
+# Sep 19, 2025
 import os
+import pandas as pd
+import networkx as nx
+from tqdm import tqdm
 import pickle
-import argparse
-import itertools
-
-
-def parse_args():
-    ap = argparse.ArgumentParser(
-        description="Preview edges from a BOOKS graph pickle"
-    )
-    ap.add_argument(
-        "--graph",
-        default="../booksGraph/graph_with_edges.pkl",
-        help="Path to graph pickle "
-             "(default: ../booksGraph/graph_with_edges.pkl)",
-    )
-    ap.add_argument(
-        "-n",
-        type=int,
-        default=10,
-        help="Number of edges to preview (default: 10)",
-    )
-    return ap.parse_args()
 
 
 def main():
-    args = parse_args()
-    graph_path = os.path.abspath(args.graph)
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    # TSV for movies
+    DATA_TSV = os.path.abspath(os.path.join(HERE, "..", "data_book", "items_filtered.tsv"))
+    OUT_DIR = os.path.abspath(os.path.join(HERE, "..", "booksGraph"))
+    PKL_PATH = os.path.join(OUT_DIR, "graph.pkl")
 
-    if not os.path.exists(graph_path):
-        raise FileNotFoundError(f"Graph not found: {graph_path}")
+    os.makedirs(OUT_DIR, exist_ok=True)
 
-    with open(graph_path, "rb") as f:
-        G = pickle.load(f)
+    print(f"[INFO] Loading items from: {DATA_TSV}")
+    # IMPORTANT: sep="\t" for TSV
+    df = pd.read_csv(DATA_TSV, dtype=str, sep="\t")
 
-    print(f"[INFO] Graph loaded: {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
-    print(f"[INFO] Previewing first {args.n} edges:\n")
+    # --- Figure out which ID column to use ---
+    if "item_id" in df.columns:
+        id_col = "item_id"
+    elif "movieid" in df.columns:
+        id_col = "movieid"
+    else:
+        raise ValueError(
+            f"Expected an ID column 'item_id' or 'movieid' in {DATA_TSV}, "
+            f"found: {list(df.columns)}"
+        )
 
-    for idx, (u, v, data) in enumerate(itertools.islice(G.edges(data=True), args.n), start=1):
-        print(f"{idx}. {u} -- {v}")
-        if data:
-            for k, val in data.items():
-                print(f"      {k}: {val}")
-        else:
-            print("      (no attributes)")
+    # --- Figure out which columns to treat as topic/title/abstract ---
+    # For news-style: topic / title / abstract
+    # For movie-style: cat1 (topic-ish) / summary (title-ish) / abstract
+    topic_col = None
+    title_col = None
+    abs_col = None
 
-    print("\n[DONE]")
+    if "topic" in df.columns:
+        topic_col = "topic"
+    elif "cat1" in df.columns:
+        topic_col = "cat1"
+
+    if "title" in df.columns:
+        title_col = "title"
+    elif "summary" in df.columns:
+        title_col = "summary"
+
+    if "abstract" in df.columns:
+        abs_col = "abstract"
+
+    print("[INFO] Column mapping:")
+    print(f"       id_col    = {id_col}")
+    print(f"       topic_col = {topic_col}")
+    print(f"       title_col = {title_col}")
+    print(f"       abs_col   = {abs_col}")
+
+    G = nx.Graph()
+
+    print("[INFO] Adding nodes (no edges yet).")
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Adding nodes"):
+        item_id = row[id_col]
+        attrs = {}
+
+        if topic_col is not None:
+            val = row[topic_col]
+            attrs["topic"] = val if (pd.notna(val)) else ""
+
+        if title_col is not None:
+            val = row[title_col]
+            attrs["title"] = val if (pd.notna(val)) else ""
+
+        if abs_col is not None:
+            val = row[abs_col]
+            attrs["abstract"] = val if (pd.notna(val)) else ""
+
+        G.add_node(item_id, **attrs)
+
+    print(f"[INFO] Graph summary: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+
+    with open(PKL_PATH, "wb") as f:
+        pickle.dump(G, f)
+    print(f"[INFO] Saved NetworkX graph -> {PKL_PATH}")
 
 
 if __name__ == "__main__":
