@@ -32,12 +32,15 @@ def load_graph(path):
     with open(path, "rb") as f:
         return pickle.load(f)
 
-def recompute_per_cluster_distances(G, centers):
+def recompute_per_cluster_distances_csv_friendly(G, centers):
     """
-    For each cluster center node, run unweighted SSSP to its cluster.
+    For each cluster center node, run unweighted SSSP (BFS) on G.
+    For nodes in the same cluster but unreachable from the center, replace -1 with:
+        penalty = (max reachable distance within that cluster) + 1
+
     Returns: rows = list of dicts with {cluster, node, distance_to_center}
     """
-    # Build cluster -> items from node attribute "cluster"
+    # cluster -> node list from node attribute "cluster"
     cluster_nodes = defaultdict(list)
     for n in G.nodes():
         cid = G.nodes[n].get("cluster")
@@ -46,20 +49,36 @@ def recompute_per_cluster_distances(G, centers):
         cluster_nodes[int(cid)].append(n)
 
     rows = []
-    for cid, center in centers.items():
+    for cid_raw, center in centers.items():
+        cid = int(cid_raw)
         if center is None:
             continue
-        nodes_in_cluster = set(cluster_nodes[int(cid)])
-        # single-source unweighted shortest path lengths
+        if cid not in cluster_nodes:
+            continue
+
+        nodes_in_cluster = list(cluster_nodes[cid])
+
+        # BFS from the chosen center
         lengths = nx.single_source_shortest_path_length(G, source=center)
-        # keep only nodes of this cluster
+
+        # collect reachable distances inside this cluster
+        reachable = []
+        for n in nodes_in_cluster:
+            d = lengths.get(n, None)
+            if d is not None:
+                reachable.append(int(d))
+
+        # define penalty distance = max+1 (if nothing reachable, fallback to 1)
+        penalty = (max(reachable) + 1) if len(reachable) > 0 else 1
+
+        # output rows: replace unreachable with penalty
         for n in nodes_in_cluster:
             d = lengths.get(n, None)
             if d is None:
-                # unreachable from center inside the same connected component
-                rows.append({"cluster": int(cid), "node": str(n), "distance_to_center": -1})
+                rows.append({"cluster": cid, "node": str(n), "distance_to_center": penalty})
             else:
-                rows.append({"cluster": int(cid), "node": str(n), "distance_to_center": int(d)})
+                rows.append({"cluster": cid, "node": str(n), "distance_to_center": int(d)})
+
     return rows
 
 def main():
@@ -68,19 +87,24 @@ def main():
     ap.add_argument("--recompute", action="store_true",
                     help="Force recompute distances from clustered graph .pkl instead of using pre-saved distances.")
     ap.add_argument("--save-tensor", action="store_true",
-                    help="Also save a tensor aligned to nodes_order_{tag}.txt")
+                    help="Also save a tensor aligned to nodes_order_{tag}.txt (unchanged behavior).")
     args = ap.parse_args()
 
     tag = args.tag
-    # expected files
+
     nodes_order_fp   = os.path.join(OUT_DIR, f"nodes_order_{tag}.txt")
     centers_json_fp  = os.path.join(OUT_DIR, f"cluster_centers_{tag}.json")
     graph_pkl_fp     = os.path.join(OUT_DIR, f"graph_with_clusters_{tag}.pkl")
     dist_tensor_base = os.path.join(OUT_DIR, f"cluster_distances_{tag}")  # .pt or .npy
     csv_out_fp       = os.path.join(OUT_DIR, f"cluster_node_distances_{tag}.csv")
 
-    # Prefer fast path: load precomputed distances vector and expand to rows
-    if not args.recompute and os.path.exists(dist_tensor_base + ".pt") and os.path.exists(nodes_order_fp) and os.path.exists(centers_json_fp):
+    # ---- Fast path (kept as-is): expands precomputed vector to rows.
+    # NOTE: This can still contain -1 if your precomputed tensor has -1.
+    # If you want CSV-friendly replacement, use --recompute so we can compute penalties per cluster.
+    if (not args.recompute and
+        os.path.exists(dist_tensor_base + ".pt") and
+        os.path.exists(nodes_order_fp) and
+        os.path.exists(centers_json_fp)):
         try:
             import torch
             dist_vec = torch.load(dist_tensor_base + ".pt", map_location="cpu").numpy()
@@ -88,7 +112,7 @@ def main():
                 nodes_order = [line.strip() for line in f]
             with open(centers_json_fp, "r", encoding="utf-8") as f:
                 centers = json.load(f)  # {cluster_id: center_node}
-            # Need cluster id per node → read from graph (lightweight)
+
             if not os.path.exists(graph_pkl_fp):
                 raise FileNotFoundError(f"Missing graph file needed to map node->cluster: {graph_pkl_fp}")
             G = load_graph(graph_pkl_fp)
@@ -103,45 +127,34 @@ def main():
 
             pd.DataFrame(rows).to_csv(csv_out_fp, index=False)
             print(f"✅ Wrote: {csv_out_fp}  (from precomputed tensor)")
+            print("ℹ️ If you want to replace -1 with per-cluster (max+1) for CSV, run with --recompute.")
             if args.save_tensor:
-                # Already have tensor; just confirm its path
                 print(f"ℹ️ Tensor already exists: {dist_tensor_base}.pt")
             return
         except Exception as e:
             print(f"[WARN] Fast path failed ({e}). Falling back to recompute.")
             args.recompute = True
 
-    # Recompute path: load graph & centers, then BFS per center
+    # ---- Recompute path (CSV-friendly): BFS + per-cluster penalty replacement
     if not os.path.exists(graph_pkl_fp):
         raise FileNotFoundError(f"Clustered graph not found: {graph_pkl_fp}")
+    if not os.path.exists(centers_json_fp):
+        raise FileNotFoundError(f"Cluster centers JSON not found: {centers_json_fp}")
 
-    if os.path.exists(centers_json_fp):
-        with open(centers_json_fp, "r", encoding="utf-8") as f:
-            centers = json.load(f)
-    else:
-        # If centers not present, choose medoid as the highest-degree node per cluster (simple, fast fallback)
-        print("[INFO] centers JSON missing; choosing degree-based centers per cluster (fallback).")
-        G_tmp = load_graph(graph_pkl_fp)
-        cluster_nodes = defaultdict(list)
-        for n in G_tmp.nodes():
-            cid = G_tmp.nodes[n].get("cluster")
-            if cid is not None:
-                cluster_nodes[int(cid)].append(n)
-        centers = {}
-        for cid, ns in cluster_nodes.items():
-            centers[int(cid)] = max(ns, key=lambda x: G_tmp.degree(x))
+    with open(centers_json_fp, "r", encoding="utf-8") as f:
+        centers = json.load(f)
 
     G = load_graph(graph_pkl_fp)
-    rows = recompute_per_cluster_distances(G, centers)
+
+    rows = recompute_per_cluster_distances_csv_friendly(G, centers)
     df = pd.DataFrame(rows, columns=["cluster", "node", "distance_to_center"])
     df.sort_values(["cluster", "distance_to_center", "node"], inplace=True, kind="mergesort")
     df.to_csv(csv_out_fp, index=False)
-    print(f"✅ Wrote: {csv_out_fp}")
+    print(f"✅ Wrote (CSV-friendly, no -1): {csv_out_fp}")
 
-    # Optional: save a tensor aligned to nodes_order
+    # Optional: save tensor aligned to nodes_order (unchanged; still uses -1 if unreachable)
     if args.save_tensor:
         if not os.path.exists(nodes_order_fp):
-            # build nodes_order from the graph for alignment
             nodes_order = list(G.nodes())
             with open(nodes_order_fp, "w", encoding="utf-8") as f:
                 for n in nodes_order:
@@ -150,8 +163,8 @@ def main():
             with open(nodes_order_fp, "r", encoding="utf-8") as f:
                 nodes_order = [line.strip() for line in f]
 
-        # map node -> distance from the CSV we just made
-        dist_map = dict(zip(df["node"].astype(str).tolist(), df["distance_to_center"].astype(int).tolist()))
+        dist_map = dict(zip(df["node"].astype(str).tolist(),
+                            df["distance_to_center"].astype(int).tolist()))
         vec = np.array([dist_map.get(str(n), -1) for n in nodes_order], dtype=np.int64)
 
         try:

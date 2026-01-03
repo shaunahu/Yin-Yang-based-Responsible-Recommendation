@@ -21,7 +21,7 @@ def parse_args():
     ap.add_argument(
         "-n",
         type=int,
-        default=10,
+        default=200,
         help="Number of edges to preview (default: 10)",
     )
 

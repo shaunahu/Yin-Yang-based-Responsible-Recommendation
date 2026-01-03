@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # run_gclu_from_graph.py
-#
-# Cluster from a NetworkX graph_with_edges.pkl (MOVIES), save:
-# - labels (.npy)
-# - cluster membership matrix (.pt if torch, else .npy)
-# - manifest JSON (includes cluster_to_items for downstream belief script)
-# - clustered graph as .pkl (node attribute: "cluster")
-# - cluster medoids (JSON) + distance-to-center vector (.pt if torch, else .npy)
-#
-# Outputs are saved to: ../saved_clusters
-# Input graph default:    ../moviesGraph/graph_with_edges.pkl
+# Cluster from NetworkX graph_with_edges.pkl using GCLU,
+# but EXCLUDE isolated/inactive nodes completely from ALL downstream artifacts.
 
 import os
 import json
@@ -18,19 +9,22 @@ import time
 import heapq
 import pickle
 import random
-import argparse
 import numpy as np
 from collections import defaultdict
 import networkx as nx
 
-# ---------------------------
-# Defaults (MOVIES dataset)
-# ---------------------------
-DEFAULT_FEATURE_WEIGHTS = {
-    "semantic_similarity": 0.1,
-    "topic_similarity": 0.7,
-    "sentiment_similarity": 0.1,
-    "cooccurrence": 0.1,
+# -------- Paths --------
+HERE = os.path.dirname(os.path.abspath(__file__))
+GRAPH_DIR = os.path.abspath(os.path.join(HERE, "..", "booksGraph"))
+OUT_DIR = os.path.abspath(os.path.join(HERE, "..", "saved_clusters"))
+GRAPH_PKL = os.path.join(GRAPH_DIR, "graph_with_edges.pkl")
+
+# -------- Clustering config --------
+FEATURE_WEIGHTS = {
+    "semantic_similarity": 0.25,
+    "topic_similarity": 0.25,
+    "sentiment_similarity": 0.25,
+    "cooccurrence": 0.25,
 }
 FEATURE_ALIASES = {
     "cooccurrence": ["cooccurrence", "frequent", "impression_cooccurrence_prob"],
@@ -38,20 +32,17 @@ FEATURE_ALIASES = {
     "topic_similarity": ["topic_similarity"],
     "sentiment_similarity": ["sentiment_similarity"],
 }
+TOPK = 15          # Symmetric top-k pruning
+NUM_CLUSTERS = 5
+REPEATS = 5
+SEED = 123
 
-DEFAULT_TOPK = 5
-DEFAULT_NUM_CLUSTERS = 5
-DEFAULT_REPEATS = 30
-DEFAULT_SEED = 123
+# -------- Medoid config --------
+MEDOID_EXACT_THRESHOLD = 4000   # Exact BFS if cluster size <= threshold
+MEDOID_SAMPLES_LARGE = 256      # Otherwise sample candidates
+RNG = random.Random(SEED)
 
-# Medoid config
-MEDOID_EXACT_THRESHOLD = 4000   # exact BFS per candidate if cluster size <= threshold
-MEDOID_SAMPLES_LARGE = 256      # otherwise sample this many candidate centers
-
-
-# ---------------------------
-# Utility
-# ---------------------------
+# -------- Utility --------
 def load_graph(path: str):
     if not os.path.exists(path):
         raise FileNotFoundError(f"Graph not found: {path}")
@@ -73,20 +64,19 @@ def edge_weight_from_attrs(data: dict, weights: dict) -> float:
         if val is not None:
             try:
                 w += float(alpha) * float(val)
-            except Exception:
+            except:
                 pass
-    return float(w)
+    return w
 
 def symmetric_topk(edge_list, k: int):
     """
+    Keep top-k edges per node (symmetric).
     edge_list: list[(u_node, v_node, weight)]
-    Keep top-k edges per node (symmetric), by weight.
     """
     adj = defaultdict(list)
     for idx, (u, v, w) in enumerate(edge_list):
         adj[u].append((v, idx, w))
         adj[v].append((u, idx, w))
-
     keep = set()
     for u, neighs in adj.items():
         if len(neighs) <= k:
@@ -95,7 +85,6 @@ def symmetric_topk(edge_list, k: int):
         else:
             for _, idx, _ in heapq.nlargest(k, neighs, key=lambda x: x[2]):
                 keep.add(idx)
-
     return [edge_list[i] for i in sorted(keep)]
 
 def normalize_labels(labels: np.ndarray):
@@ -105,10 +94,7 @@ def normalize_labels(labels: np.ndarray):
     return new_labels, remap
 
 def save_cluster_matrix(labels: np.ndarray, nodes, out_dir, tag):
-    """
-    Save cluster membership matrix KxN as bool.
-    Prefer torch .pt; fallback to numpy .npy.
-    """
+    # Save cluster membership matrix KxN, prefer torch if available
     K = int(labels.max()) + 1
     N = len(nodes)
     try:
@@ -119,24 +105,18 @@ def save_cluster_matrix(labels: np.ndarray, nodes, out_dir, tag):
             M[k] = (lab == k)
         path = os.path.join(out_dir, f"cluster_matrix_{tag}.pt")
         torch.save(M, path)
-        return {"format": "pt", "path": os.path.abspath(path), "shape": [K, N], "dtype": "bool"}
-    except Exception:
+        return {"format": "pt", "path": path, "shape": [K, N], "dtype": "bool"}
+    except:
         M = np.zeros((K, N), bool)
         for i, c in enumerate(labels):
             M[int(c), i] = True
         path = os.path.join(out_dir, f"cluster_matrix_{tag}.npy")
         np.save(path, M)
-        return {"format": "npy", "path": os.path.abspath(path), "shape": [K, N], "dtype": "bool"}
+        return {"format": "npy", "path": path, "shape": [K, N], "dtype": "bool"}
 
-
-# ---------------------------
-# Medoid & distance helpers
-# ---------------------------
+# -------- Medoid & distance helpers --------
 def _bfs_dist_sum(G, cluster_set, source):
-    """
-    Unweighted BFS shortest-path lengths from source.
-    Sum distances for nodes in cluster_set.
-    """
+    # BFS from source, sum distances only for nodes in cluster_set
     dist_map = {}
     lengths = nx.single_source_shortest_path_length(G, source)
     for n, d in lengths.items():
@@ -145,11 +125,12 @@ def _bfs_dist_sum(G, cluster_set, source):
     total = sum(dist_map.values())
     return total, dist_map
 
-def find_cluster_medoids_unweighted(G, cluster_nodes, seed=DEFAULT_SEED):
-    RNG = random.Random(seed)
+def find_cluster_medoids_unweighted(G, cluster_nodes):
+    """
+    cluster_nodes: dict[int] -> list[node_id]  (node_id should match G's node IDs)
+    """
     medoids = {}
     medoid_dists = {}
-
     for cid, nlist in cluster_nodes.items():
         cluster_set = set(nlist)
         size = len(cluster_set)
@@ -164,7 +145,6 @@ def find_cluster_medoids_unweighted(G, cluster_nodes, seed=DEFAULT_SEED):
         best_node = None
         best_sum = float("inf")
         best_map = None
-
         for node in candidates:
             total, d_map = _bfs_dist_sum(G, cluster_set, node)
             if total < best_sum:
@@ -175,13 +155,11 @@ def find_cluster_medoids_unweighted(G, cluster_nodes, seed=DEFAULT_SEED):
         medoids[cid] = best_node
         medoid_dists[cid] = best_map if best_map else {}
         print(f"[CENTER] Cluster {cid}: center={best_node}, sumDist={best_sum}")
-
     return medoids, medoid_dists
 
 def build_distance_vector(nodes_order, medoids, medoid_dists, unreachable=-1):
     dist_vec = np.full(len(nodes_order), unreachable, dtype=np.int64)
     idx_map = {str(n): i for i, n in enumerate(nodes_order)}
-
     for cid, center in medoids.items():
         for node, d in medoid_dists[cid].items():
             idx = idx_map.get(str(node))
@@ -191,7 +169,6 @@ def build_distance_vector(nodes_order, medoids, medoid_dists, unreachable=-1):
             idxc = idx_map.get(str(center))
             if idxc is not None:
                 dist_vec[idxc] = 0
-
     return dist_vec
 
 def try_save_tensor(dist_vec, out_base):
@@ -201,220 +178,189 @@ def try_save_tensor(dist_vec, out_base):
         path = f"{out_base}.pt"
         torch.save(t, path)
         print(f"[SAVE] distances -> {path}")
-        return {"path": os.path.abspath(path), "format": "pt", "shape": list(t.shape)}
-    except Exception:
+        return {"path": path, "format": "pt", "shape": list(t.shape)}
+    except:
         npy = f"{out_base}.npy"
         np.save(npy, dist_vec)
         print(f"[SAVE] distances -> {npy}")
-        return {"path": os.path.abspath(npy), "format": "npy", "shape": list(dist_vec.shape)}
+        return {"path": npy, "format": "npy", "shape": list(dist_vec.shape)}
 
-
-# ---------------------------
-# CLI
-# ---------------------------
-def parse_args():
-    here = os.path.dirname(os.path.abspath(__file__))
-    default_graph_pkl = os.path.abspath(os.path.join(here, "..", "booksGraph", "graph_with_edges.pkl"))
-    default_out_dir = os.path.abspath(os.path.join(here, "..", "saved_clusters"))
-
-    p = argparse.ArgumentParser(
-        description="Cluster from NetworkX graph_with_edges.pkl using GCLU; save outputs to saved_clusters/"
-    )
-    p.add_argument("--graph_pkl", default=default_graph_pkl, help="Path to graph_with_edges.pkl")
-    p.add_argument("--out_dir", default=default_out_dir, help="Output directory (default: ../saved_clusters)")
-    p.add_argument("--topk", type=int, default=DEFAULT_TOPK, help="Symmetric top-k pruning (<=0 disables)")
-    p.add_argument("--num_clusters", type=int, default=DEFAULT_NUM_CLUSTERS, help="Number of clusters (K)")
-    p.add_argument("--repeats", type=int, default=DEFAULT_REPEATS, help="GCLU repeats")
-    p.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed")
-    p.add_argument(
-        "--feature_weights_json",
-        default="",
-        help=("Optional: JSON string or JSON file path overriding feature weights. "
-              "Example: '{\"semantic_similarity\":0.7,\"cooccurrence\":0.3}'")
-    )
-    return p.parse_args()
-
-def load_feature_weights(arg: str):
-    if not arg:
-        return dict(DEFAULT_FEATURE_WEIGHTS)
-
-    # If arg is a file path
-    if os.path.exists(arg) and os.path.isfile(arg):
-        with open(arg, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if not isinstance(obj, dict):
-            raise ValueError("feature_weights_json file must contain a JSON object")
-        return obj
-
-    # Otherwise parse as JSON string
-    obj = json.loads(arg)
-    if not isinstance(obj, dict):
-        raise ValueError("feature_weights_json must be a JSON object")
-    return obj
-
-
-# ---------------------------
-# Main
-# ---------------------------
+# -------- Main --------
 def main():
-    args = parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
-    random.seed(args.seed)
-
-    feature_weights = load_feature_weights(args.feature_weights_json)
-    topk = args.topk if args.topk and args.topk > 0 else None
+    os.makedirs(OUT_DIR, exist_ok=True)
+    random.seed(SEED)
 
     # Load graph
     t0 = time.time()
-    G = load_graph(args.graph_pkl)
+    G_full = load_graph(GRAPH_PKL)
+    print(f"[INFO] Loaded graph: {G_full.number_of_nodes()} nodes, {G_full.number_of_edges()} edges, time={time.time()-t0:.2f}s")
+
+    # Optional: remove degree-0 isolates in the ORIGINAL graph (cheap, safe)
+    isolates_full = list(nx.isolates(G_full))
+    print(f"[INFO] Original degree-0 isolates: {len(isolates_full)}")
+
+    # Build weighted edges (only positive)
+    nodes_full = list(G_full.nodes())
+    node_index_full = {n: i for i, n in enumerate(nodes_full)}
+
+    edges = []
+    for u, v, data in G_full.edges(data=True):
+        w = edge_weight_from_attrs(data, FEATURE_WEIGHTS)
+        if w > 0:
+            edges.append((u, v, float(w)))
+    print(f"[INFO] Positive weighted edges: {len(edges)}")
+
+    # Symmetric TOPK pruning on weighted edges
+    if TOPK is not None:
+        edges = symmetric_topk(edges, TOPK)
+        print(f"[INFO] After TOPK={TOPK}: {len(edges)} weighted edges")
+
+    # Define ACTIVE nodes = nodes that appear in the retained weighted edge list
+    if len(edges) == 0:
+        raise RuntimeError("No positive weighted edges after pruning. Cannot run GCLU.")
+
+    active_nodes_set = set()
+    for u, v, _ in edges:
+        active_nodes_set.add(u)
+        active_nodes_set.add(v)
+
+    dropped_nodes = [n for n in nodes_full if n not in active_nodes_set]
+    print(f"[INFO] Active nodes for clustering: {len(active_nodes_set)} / total {len(nodes_full)}")
+    print(f"[INFO] Dropped nodes (no retained positive edges): {len(dropped_nodes)}")
+
+    # Keep them completely out of downstream artifacts:
+    # -> cluster ONLY on G_active, save ONLY G_active artifacts
+    G = G_full.subgraph(active_nodes_set).copy()
+
+    # Build index for ACTIVE node list
     nodes = list(G.nodes())
     node_index = {n: i for i, n in enumerate(nodes)}
-    print(f"[INFO] Loaded graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, time={time.time()-t0:.2f}s")
-    print(f"[INFO] Graph path: {args.graph_pkl}")
-    print(f"[INFO] Out dir: {args.out_dir}")
 
-    # Build weighted edges (keep w>0)
-    edges = []
-    for u, v, data in G.edges(data=True):
-        w = edge_weight_from_attrs(data, feature_weights)
-        if w > 0:
-            edges.append([node_index[u], node_index[v], w])
+    # Convert pruned weighted edges to indices over ACTIVE nodes
+    # (ignore any edge whose endpoint got dropped, though it shouldn't happen)
+    edges_idx = []
+    for u, v, w in edges:
+        if u in node_index and v in node_index:
+            edges_idx.append([node_index[u], node_index[v], float(w)])
 
-    print(f"[INFO] Positive edges: {len(edges)}")
-    if len(edges) == 0:
-        print("[WARN] No positive edges after weighting. Check feature names/aliases vs edge attributes.")
-        print(f"[WARN] feature_weights={feature_weights}")
-
-    # Symmetric top-k pruning
-    if topk is not None:
-        edges_l = [(nodes[u], nodes[v], w) for u, v, w in edges]
-        edges_l = symmetric_topk(edges_l, topk)
-        edges = [[node_index[u], node_index[v], w] for u, v, w in edges_l]
-        print(f"[INFO] After TOPK={topk}: {len(edges)} edges")
-
-    # Compress active nodes (nodes that appear in edges)
-    src = np.array([e[0] for e in edges], dtype=np.int64)
-    dst = np.array([e[1] for e in edges], dtype=np.int64)
+    # Compress active nodes for GCLU input (some nodes might still be isolated within edges_idx due to pruning)
+    src = np.array([e[0] for e in edges_idx], dtype=np.int64)
+    dst = np.array([e[1] for e in edges_idx], dtype=np.int64)
     active = np.unique(np.concatenate([src, dst]))
     old2new = {old: i for i, old in enumerate(active)}
     src_c = np.vectorize(old2new.__getitem__)(src)
     dst_c = np.vectorize(old2new.__getitem__)(dst)
-    print(f"[INFO] Active nodes: {len(active)} / total {len(nodes)}")
+    print(f"[INFO] Active-in-edge nodes (GCLU input): {len(active)} / nodes_in_G_active {len(nodes)}")
+
+    # IMPORTANT: nodes that are in G but not in (src,dst) after pruning are "isolated in pruned weighted graph".
+    # To keep them OUT (as you requested), we drop them too from clustering artifacts:
+    nodes_in_gclu = [nodes[i] for i in active.tolist()]
+    G = G.subgraph(nodes_in_gclu).copy()
+    nodes = list(G.nodes())
+    node_index = {n: i for i, n in enumerate(nodes)}
+    print(f"[INFO] Final nodes after dropping pruned-weight isolates: {len(nodes)}")
+
+    # Rebuild edges_idx over final nodes
+    edges_idx = []
+    for u, v, w in edges:
+        if u in node_index and v in node_index:
+            edges_idx.append([node_index[u], node_index[v], float(w)])
+
+    if len(edges_idx) == 0:
+        raise RuntimeError("No edges remain after final pruning. Cannot run GCLU.")
+
+    src = np.array([e[0] for e in edges_idx], dtype=np.int64)
+    dst = np.array([e[1] for e in edges_idx], dtype=np.int64)
 
     # Run GCLU
     try:
         from gclu import gclu
-    except Exception as e:
-        raise ImportError(
-            "Missing dependency 'gclu'. Install it (e.g., pip install gclu or from source): "
-            "https://github.com/uef-machine-learning/gclu"
-        ) from e
+    except:
+        raise ImportError("Install gclu: https://github.com/uef-machine-learning/gclu")
 
-    weights_arr = np.array([e[2] for e in edges], dtype=np.float64)
-    edges_gclu = [[int(u), int(v), float(w)] for u, v, w in zip(src_c, dst_c, weights_arr)]
-
-    print(f"[INFO] Running GCLU... (K={args.num_clusters}, repeats={args.repeats}, seed={args.seed})")
+    edges_gclu = [[int(u), int(v), float(w)] for u, v, w in edges_idx]
+    print(f"[INFO] Running GCLU on {len(nodes)} nodes, {len(edges_gclu)} edges...")
     t1 = time.time()
-    labels_active = gclu(
+    labels = gclu(
         edges_gclu,
         graph_type="similarity",
-        num_clusters=args.num_clusters,
-        repeats=args.repeats,
-        scale="no",
-        seed=args.seed,
+        num_clusters=NUM_CLUSTERS,
+        repeats=REPEATS,
+        scale="log",
+        seed=SEED,
         costf="inv",
     )
     t2 = time.time()
     print(f"[INFO] GCLU done in {t2 - t1:.2f}s")
+    labels = np.array(labels, dtype=np.int32)
 
-    labels_active = np.array(labels_active, dtype=np.int32)
+    # Normalize labels (over ACTIVE nodes only)
+    labels_norm, _ = normalize_labels(labels)
+    tag = f"K{labels_norm.max()+1}_topk{TOPK or 'all'}"
 
-    # Expand labels back to all nodes
-    labels_full = np.full(len(nodes), -1, np.int32)
-    for i, a in enumerate(active):
-        labels_full[a] = labels_active[i]
+    # Save dropped nodes list ONLY as audit (not used downstream)
+    dropped_fp = os.path.join(OUT_DIR, f"dropped_nodes_{tag}.json")
+    with open(dropped_fp, "w", encoding="utf-8") as f:
+        json.dump([str(n) for n in dropped_nodes], f, ensure_ascii=False, indent=2)
+    print(f"[INFO] Saved dropped nodes audit -> {dropped_fp}")
 
-    # Any nodes not in active (isolated after pruning) -> assign to largest cluster
-    if (labels_full == -1).any():
-        unique, counts = np.unique(labels_active, return_counts=True)
-        largest = int(unique[np.argmax(counts)])
-        labels_full[labels_full == -1] = largest
-        print(f"[INFO] Filled inactive nodes with largest cluster id={largest}")
-
-    # Normalize labels to 0..K-1
-    labels_norm, _ = normalize_labels(labels_full)
-    K_final = int(labels_norm.max() + 1)
-    tag = f"K{K_final}_topk{topk or 'all'}"
-
-    # Save labels
-    labels_path = os.path.join(args.out_dir, f"labels_{tag}.npy")
+    # Save labels & matrix (ACTIVE nodes only)
+    labels_path = os.path.join(OUT_DIR, f"labels_{tag}.npy")
     np.save(labels_path, labels_norm)
-    print(f"[INFO] Saved labels -> {labels_path}")
+    matrix_info = save_cluster_matrix(labels_norm, nodes, OUT_DIR, tag)
 
-    # Save cluster matrix
-    matrix_info = save_cluster_matrix(labels_norm, nodes, args.out_dir, tag)
-
-    # Build cluster_to_items
+    # Build clusters (use node IDs, not str, to match G)
     cluster_nodes = defaultdict(list)
     for i, c in enumerate(labels_norm):
-        cluster_nodes[int(c)].append(str(nodes[i]))
+        cluster_nodes[int(c)].append(nodes[i])
 
-    # Save clustered graph as PKL (requested)
-    for i, node in enumerate(nodes):
-        G.nodes[node]["cluster"] = int(labels_norm[i])
-
-    graph_clustered_path = os.path.join(args.out_dir, f"graph_with_clusters_{tag}.pkl")
-    with open(graph_clustered_path, "wb") as f:
-        pickle.dump(G, f)
-    print(f"[INFO] Saved clustered graph -> {graph_clustered_path}")
-
-    # Save node order (useful for distance vector alignment)
-    nodes_order_path = os.path.join(args.out_dir, f"nodes_order_{tag}.txt")
-    with open(nodes_order_path, "w", encoding="utf-8") as f:
-        for n in nodes:
-            f.write(str(n) + "\n")
-
-    # Save manifest (includes cluster_to_items for your belief script)
+    # Save manifest (ACTIVE nodes only)
     manifest = {
         "tag": tag,
-        "num_clusters": K_final,
-        "num_nodes": len(nodes),
-        "graph_pkl": os.path.abspath(args.graph_pkl),
-        "graph_with_clusters_pkl": os.path.abspath(graph_clustered_path),
-        "feature_weights": feature_weights,
-        "topk": topk,
+        "num_clusters": int(labels_norm.max() + 1),
+        "num_nodes": int(len(nodes)),
+        "num_edges": int(G.number_of_edges()),
         "labels_path": os.path.abspath(labels_path),
         "matrix": matrix_info,
         "cluster_sizes": {str(k): len(v) for k, v in cluster_nodes.items()},
-        "cluster_to_items": {str(k): v for k, v in cluster_nodes.items()},
-        "nodes_order_path": os.path.abspath(nodes_order_path),
+        "dropped_nodes_audit": os.path.abspath(dropped_fp),
+        "notes": "This run excludes nodes with no retained positive weighted edges (and pruned-weight isolates) from ALL artifacts.",
     }
-
-    manifest_path = os.path.join(args.out_dir, f"cluster_matrix_manifest_{tag}.json")
+    manifest_path = os.path.join(OUT_DIR, f"cluster_matrix_manifest_{tag}.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     print(f"[INFO] Saved manifest -> {manifest_path}")
 
-    # --- Medoid + distance-to-center ---
-    medoids, medoid_dists = find_cluster_medoids_unweighted(G, cluster_nodes, seed=args.seed)
+    # Save graph with cluster labels (ACTIVE nodes only)
+    for i, node in enumerate(nodes):
+        G.nodes[node]["cluster"] = int(labels_norm[i])
+    graph_clustered_path = os.path.join(OUT_DIR, f"graph_with_clusters_{tag}.pkl")
+    with open(graph_clustered_path, "wb") as f:
+        pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"[INFO] Saved clustered graph -> {graph_clustered_path}")
 
-    centers_path = os.path.join(args.out_dir, f"cluster_centers_{tag}.json")
+    # --- Medoid + distance-to-center (ACTIVE nodes only) ---
+    # Save node order (ACTIVE nodes only)
+    nodes_order_path = os.path.join(OUT_DIR, f"nodes_order_{tag}.txt")
+    with open(nodes_order_path, "w", encoding="utf-8") as f:
+        for n in nodes:
+            f.write(str(n) + "\n")
+    print(f"[INFO] Saved nodes order -> {nodes_order_path}")
+
+    medoids, medoid_dists = find_cluster_medoids_unweighted(G, cluster_nodes)
+
+    # Save medoids
+    centers_path = os.path.join(OUT_DIR, f"cluster_centers_{tag}.json")
     with open(centers_path, "w", encoding="utf-8") as f:
-        json.dump({str(cid): str(n) for cid, n in medoids.items()}, f, indent=2, ensure_ascii=False)
+        json.dump({int(cid): str(n) for cid, n in medoids.items()}, f, indent=2, ensure_ascii=False)
+    print(f"[INFO] Saved centers -> {centers_path}")
 
-    dist_vec = build_distance_vector(nodes, medoids, medoid_dists)
-    dist_base = os.path.join(args.out_dir, f"cluster_distances_{tag}")
-    dist_info = try_save_tensor(dist_vec, dist_base)
+    # Build & save global distance vector (ACTIVE nodes only; aligned to nodes_order)
+    dist_vec = build_distance_vector(nodes, medoids, medoid_dists, unreachable=-1)
+    dist_base = os.path.join(OUT_DIR, f"cluster_distances_{tag}")
+    _ = try_save_tensor(dist_vec, dist_base)
 
-    # Update manifest with medoid/dist paths (overwrite manifest once)
-    manifest["cluster_centers_path"] = os.path.abspath(centers_path)
-    manifest["cluster_distances"] = dist_info
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
-    print(f"[INFO] Updated manifest with medoid/distance info -> {manifest_path}")
-
-    print("[DONE] Clustering + graph PKL + medoid calculation complete.")
-
+    print("[DONE] Clustering complete (isolated/inactive nodes excluded from artifacts).")
 
 if __name__ == "__main__":
     main()
