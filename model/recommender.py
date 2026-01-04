@@ -1,8 +1,8 @@
 """
 The original recommendation system class.
 """
-import json
 
+import torch
 from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
@@ -87,32 +87,46 @@ class Recommender:
             logger.error(e)
 
 
-    def make_recommendation(self):
+    def make_recommendation(self, batch_size=64):
         top_k = self.base_config.getint("recommender", "top_k")
-
         test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
-        topk_score, topk_iid_list = full_sort_topk(test_users, self.saved_model, self.data.test_data, k=top_k, device=self.saved_config['device'])
-
-        # convert to external id
-        external_user_ids = self.data.dataset.id2token(self.data.dataset.uid_field, test_users.cpu())
 
         all_external_recommendations = []
-        for i, user_topk_iids in enumerate(topk_iid_list):
-            external_items = self.data.dataset.id2token(self.data.dataset.iid_field, user_topk_iids.cpu())
-            external_user_id = external_user_ids[i]
-            all_external_recommendations.append({
-                'user_id': external_user_id,
-                'recommended_items': external_items
-            })
+        total_batches = (len(test_users) + batch_size - 1) // batch_size
 
-        # user_id_mapping = {}
-        # for external_user_id in external_user_ids:
-        #     for user in self.users:
-        #         user_id_mapping[user.id] = external_user_id
-        # with open('user_token_map.json', 'w') as f:
-        #     json.dump(user_id_mapping, f, indent=4)
+        for i in range(0, len(test_users), batch_size):
+            batch_users = test_users[i:i + batch_size]
+            print(f"Processing batch {i//batch_size + 1}/{total_batches}")
+
+            topk_score, topk_iid_list = full_sort_topk(
+                batch_users,
+                self.saved_model,
+                self.data.test_data,
+                k=top_k,
+                device=self.saved_config['device'],
+            )
+
+            external_user_ids = self.data.dataset.id2token(
+                self.data.dataset.uid_field,
+                batch_users.cpu()
+            )
+
+            for j, user_topk_iids in enumerate(topk_iid_list):
+                external_items = self.data.dataset.id2token(
+                    self.data.dataset.iid_field,
+                    user_topk_iids.cpu()
+                )
+                all_external_recommendations.append({
+                    'user_id': external_user_ids[j],
+                    'recommended_items': external_items
+                })
+
+            del topk_score, topk_iid_list
+            torch.cuda.empty_cache()
+
 
         save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
+        return all_external_recommendations
 
     def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
