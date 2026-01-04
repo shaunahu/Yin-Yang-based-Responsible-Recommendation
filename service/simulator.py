@@ -1,5 +1,6 @@
 import numpy as np
 import json
+import os
 
 from common import logger
 from common.constants import ITEM_PICKLE_FILE, USER_PICKLE_FILE, USER_FILE, USER_BELIF_FILE
@@ -32,6 +33,7 @@ class Simulator:
         data_preprocesser = DataPreprocesser(dataset)
 
         # calculate user initial belief
+        os.makedirs(data_preprocesser.resource_path, exist_ok=True)
         user_file_path = data_preprocesser.resource_path / USER_FILE
         user_belief_file_path = data_preprocesser.resource_path / USER_BELIF_FILE
         init_user_belief(user_file_path, user_belief_file_path)
