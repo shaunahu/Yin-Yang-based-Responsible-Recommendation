@@ -23,8 +23,8 @@ GRAPH_PKL = os.path.join(GRAPH_DIR, "graph_with_edges.pkl")
 FEATURE_WEIGHTS = {
     "semantic_similarity": 0.25,
     "topic_similarity": 0.25,
-    "sentiment_similarity": 0.25,
-    "cooccurrence": 0.25,
+    "sentiment_similarity": 0.4,
+    "cooccurrence": 0.1,
 }
 FEATURE_ALIASES = {
     "cooccurrence": ["cooccurrence", "frequent", "impression_cooccurrence_prob"],
@@ -32,7 +32,7 @@ FEATURE_ALIASES = {
     "topic_similarity": ["topic_similarity"],
     "sentiment_similarity": ["sentiment_similarity"],
 }
-TOPK = 15          # Symmetric top-k pruning
+TOPK = 5          # Symmetric top-k pruning
 NUM_CLUSTERS = 5
 REPEATS = 5
 SEED = 123
@@ -286,7 +286,7 @@ def main():
         graph_type="similarity",
         num_clusters=NUM_CLUSTERS,
         repeats=REPEATS,
-        scale="log",
+        scale="no",
         seed=SEED,
         costf="inv",
     )
