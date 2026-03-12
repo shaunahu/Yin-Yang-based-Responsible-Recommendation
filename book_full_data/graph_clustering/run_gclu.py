@@ -32,9 +32,9 @@ FEATURE_ALIASES = {
     "topic_similarity": ["topic_similarity"],
     "sentiment_similarity": ["sentiment_similarity"],
 }
-TOPK = 15          # Symmetric top-k pruning
+TOPK = 5          # Symmetric top-k pruning
 NUM_CLUSTERS = 5
-REPEATS = 5
+REPEATS = 15
 SEED = 123
 
 # -------- Medoid config --------
