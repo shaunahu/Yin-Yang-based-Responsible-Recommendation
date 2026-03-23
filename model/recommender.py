@@ -90,45 +90,49 @@ class Recommender:
         except Exception as e:
             logger.error(e)
 
-
-    def make_recommendation(self, batch_size=64):
+    def make_recommendation(self, batch_size=64, user_item_info=None):
         top_k = self.base_config.getint("recommender", "top_k")
         test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
+
+        # index_to_user: {0: 'U100', ...}, index_to_item: {0: 'B600045', ...}
+        index_to_user = user_item_info['index_to_user'] if user_item_info else {}
+        index_to_item = user_item_info['index_to_item'] if user_item_info else {}
 
         all_external_recommendations = []
         total_batches = (len(test_users) + batch_size - 1) // batch_size
 
         for i in range(0, len(test_users), batch_size):
             batch_users = test_users[i:i + batch_size]
-            print(f"Processing batch {i//batch_size + 1}/{total_batches}")
+            print(f"Processing batch {i // batch_size + 1}/{total_batches}")
 
             topk_score, topk_iid_list = full_sort_topk(
-                batch_users,
-                self.saved_model,
-                self.data.test_data,
-                k=top_k,
-                device=self.saved_config['device'],
+                batch_users, self.saved_model, self.data.test_data,
+                k=top_k, device=self.saved_config['device'],
             )
 
             external_user_ids = self.data.dataset.id2token(
-                self.data.dataset.uid_field,
-                batch_users.cpu()
+                self.data.dataset.uid_field, batch_users.cpu()
             )
 
             for j, user_topk_iids in enumerate(topk_iid_list):
                 external_items = self.data.dataset.id2token(
-                    self.data.dataset.iid_field,
-                    user_topk_iids.cpu()
+                    self.data.dataset.iid_field, user_topk_iids.cpu()
                 )
+                # convert numeric token back to original id
+                user_token = external_user_ids[j]
+                original_user_id = index_to_user.get(int(user_token), user_token)
+                original_items = [index_to_item.get(int(t), t) for t in external_items]
+
                 all_external_recommendations.append({
-                    'user_id': external_user_ids[j],
-                    'recommended_items': external_items
+                    'user_id': original_user_id,
+                    'recommended_items': original_items
                 })
 
             del topk_score, topk_iid_list
             torch.cuda.empty_cache()
 
-        save_to_file(all_external_recommendations, self.config.base_path / "saved" / self.dataset/self.recommender/ 'recommendations.pkl')
+        save_to_file(all_external_recommendations,
+                     self.config.base_path / "saved" / self.dataset / self.recommender / 'recommendations.pkl')
         return all_external_recommendations
 
     def save_item_id_mapping(self, items: List[Item], user_item_info: dict):
