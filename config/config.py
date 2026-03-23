@@ -35,8 +35,8 @@ class RSConfig(BaseConfig):
         'ITEM_ID_FIELD': 'item_id',
         'LABEL_FIELD': 'label',
         'TIME_FIELD': 'timestamp',
-        'user_inter_num_interval': '[15,Inf)',
-        'item_inter_num_interval': '[15,Inf)',
+        'user_inter_num_interval': '[10,Inf)',
+        'item_inter_num_interval': '[10,Inf)',
         'load_col': {'inter': ['user_id', 'item_id', 'label', 'timestamp']},
 
         # training parameter settings
@@ -56,5 +56,5 @@ class RSConfig(BaseConfig):
             'mode': 'full'},
         'metrics': ['Recall', 'NDCG', 'Hit', 'Precision'],
         'topk': [5, 10, 20],
-        'valid_metric': 'Recall@10',
+        'valid_metric': 'Recall@20',
     }

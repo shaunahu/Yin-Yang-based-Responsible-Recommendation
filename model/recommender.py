@@ -76,14 +76,6 @@ class Recommender:
                 self.user_embedding = user_embedding
                 save_to_file(user_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'user_embedding.pkl')
 
-                # save user token-id mapping to json
-                user_token_to_id = {token: int(idx) for token, idx in user_token2id.items()}
-                user_id_to_token = {int(idx): token for idx, token in enumerate(user_id_map)}
-                # user token-id mapping
-                user_token_to_id = {token: int(idx) for token, idx in user_token2id.items() if token != '[PAD]'}
-                with open(save_dir / "user_token_id_map.json", "w") as f:
-                    json.dump(user_token_to_id, f, indent=2)
-
             # create item id-embedding mapping {id:embedding}, the id is the item id.
             if hasattr(model, 'item_embedding'):
                 item_embedding = model.item_embedding.weight.data.cpu().numpy()
@@ -95,12 +87,6 @@ class Recommender:
                         item_id_to_embedding[original_id] = item_embedding[internal_id]
                 self.item_embedding = item_id_to_embedding
                 save_to_file(item_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'item_embedding.pkl')
-
-                # item token-id mapping
-                item_token_to_id = {token: int(idx) for token, idx in item_token2id.items() if token != '[PAD]'}
-                with open(save_dir / "item_token_id_map.json", "w") as f:
-                    json.dump(item_token_to_id, f, indent=2)
-
         except Exception as e:
             logger.error(e)
 
@@ -142,8 +128,42 @@ class Recommender:
             del topk_score, topk_iid_list
             torch.cuda.empty_cache()
 
-        save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
+        save_to_file(all_external_recommendations, self.config.base_path / "saved" / self.dataset/self.recommender/ 'recommendations.pkl')
         return all_external_recommendations
+
+    def save_item_id_mapping(self, items: List[Item], user_item_info: dict):
+        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
+        os.makedirs(save_dir, exist_ok=True)
+
+        item_token2id = self.data.dataset.field2token_id['item_id']
+        index_to_item = user_item_info['index_to_item']  # {0: 'B600045', 1: 'B601155', ...}
+
+        item_id_to_token = {}
+        for idx, item_id in index_to_item.items():
+            token_key = str(idx)
+            if token_key in item_token2id:
+                item_id_to_token[item_id] = int(item_token2id[token_key])
+
+        with open(save_dir / "item_id_token_map.json", "w") as f:
+            json.dump(item_id_to_token, f, indent=2)
+        logger.info(f"Item id-token mapping saved: {len(item_id_to_token)} items")
+
+    def save_user_id_mapping(self, users: List[UserAgent], user_item_info: dict):
+        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
+        os.makedirs(save_dir, exist_ok=True)
+
+        user_token2id = self.data.dataset.field2token_id['user_id']
+        index_to_user = user_item_info['index_to_user']  # {0: 'U100', 1: 'U200', ...}
+
+        user_id_to_token = {}
+        for idx, user_id in index_to_user.items():
+            token_key = str(idx)
+            if token_key in user_token2id:
+                user_id_to_token[user_id] = int(user_token2id[token_key])
+
+        with open(save_dir / "user_id_token_map.json", "w") as f:
+            json.dump(user_id_to_token, f, indent=2)
+        logger.info(f"User id-token mapping saved: {len(user_id_to_token)} users")
 
     def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
