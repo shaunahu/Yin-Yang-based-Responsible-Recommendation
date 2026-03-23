@@ -35,20 +35,26 @@ class RSConfig(BaseConfig):
         'ITEM_ID_FIELD': 'item_id',
         'LABEL_FIELD': 'label',
         'TIME_FIELD': 'timestamp',
-        'user_inter_num_interval': '[0,Inf)',
-        'item_inter_num_interval': '[0,Inf)',
+        'user_inter_num_interval': '[15,Inf)',
+        'item_inter_num_interval': '[15,Inf)',
         'load_col': {'inter': ['user_id', 'item_id', 'label', 'timestamp']},
 
         # training parameter settings
         'epochs': base_config.getint("recommender", "epochs"),
-        # 'stopping_step': 10,
+        'stopping_step': 20,
         'learning_rate': base_config.getfloat("recommender", "learning_rate"),
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'embedding_size': 64,
+        'n_layers': 2,
+        'reg_weight': 1e-4,
 
         # evaluation parameter settings
         'eval_args': {
             'split': {'RS': [8, 1, 1]},
             'group_by': 'user',
-            'order': 'TO',
-            'mode': 'full'}
+            'order': 'RO',
+            'mode': 'full'},
+        'metrics': ['Recall', 'NDCG', 'Hit', 'Precision'],
+        'topk': [5, 10, 20],
+        'valid_metric': 'Recall@10',
     }

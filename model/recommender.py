@@ -3,6 +3,7 @@ The original recommendation system class.
 """
 
 import torch
+import json
 from recbole.config import Config
 from recbole.utils import init_seed, init_logger
 from recbole.data import create_dataset, data_preparation
@@ -50,7 +51,10 @@ class Recommender:
 
 
     def load_saved_model(self):
-        saved_model_path = self.config.base_path / "saved" / f"{self.recommender}.pth"
+        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
+        os.makedirs(save_dir, exist_ok=True)
+
+        saved_model_path = save_dir / f"{self.recommender}.pth"
         if not os.path.exists(saved_model_path):
             logger.error(f' ========= model not found in {saved_model_path}! ========== ')
         try:
@@ -70,7 +74,15 @@ class Recommender:
                     if internal_id < len(user_embedding):
                         user_id_to_embedding[original_id] = user_embedding[internal_id]
                 self.user_embedding = user_embedding
-                save_to_file(user_id_to_embedding, self.config.base_path / "saved" / 'user_embedding.pkl')
+                save_to_file(user_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'user_embedding.pkl')
+
+                # save user token-id mapping to json
+                user_token_to_id = {token: int(idx) for token, idx in user_token2id.items()}
+                user_id_to_token = {int(idx): token for idx, token in enumerate(user_id_map)}
+                # user token-id mapping
+                user_token_to_id = {token: int(idx) for token, idx in user_token2id.items() if token != '[PAD]'}
+                with open(save_dir / "user_token_id_map.json", "w") as f:
+                    json.dump(user_token_to_id, f, indent=2)
 
             # create item id-embedding mapping {id:embedding}, the id is the item id.
             if hasattr(model, 'item_embedding'):
@@ -82,7 +94,13 @@ class Recommender:
                     if internal_id < len(item_embedding):
                         item_id_to_embedding[original_id] = item_embedding[internal_id]
                 self.item_embedding = item_id_to_embedding
-                save_to_file(item_id_to_embedding, self.config.base_path / "saved" / 'item_embedding.pkl')
+                save_to_file(item_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'item_embedding.pkl')
+
+                # item token-id mapping
+                item_token_to_id = {token: int(idx) for token, idx in item_token2id.items() if token != '[PAD]'}
+                with open(save_dir / "item_token_id_map.json", "w") as f:
+                    json.dump(item_token_to_id, f, indent=2)
+
         except Exception as e:
             logger.error(e)
 
@@ -124,7 +142,6 @@ class Recommender:
             del topk_score, topk_iid_list
             torch.cuda.empty_cache()
 
-
         save_to_file(all_external_recommendations, self.config.base_path / "saved" / 'recommendations.pkl')
         return all_external_recommendations
 
@@ -165,7 +182,10 @@ class Recommender:
             if rec_model:
                 logger.info(rec_model)
                 trainer = Trainer(recommender_config, rec_model)
-                trainer.saved_model_file = trainer.saved_model_file.split('-')[0] + '.pth'
+
+                save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
+                os.makedirs(save_dir, exist_ok=True)
+                trainer.saved_model_file = str(save_dir / f"{selected_method}.pth")
 
                 # model training
                 best_valid_score, best_valid_result = trainer.fit(train_data, valid_data)

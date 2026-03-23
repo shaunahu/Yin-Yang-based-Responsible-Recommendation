@@ -9,5 +9,5 @@ MAX_WORDS = 300
 DIM = 100
 NUM_THREADS = 32
 
-GRAPH_CLUSTER_FILE = "graph/graph_data/news_item_graph_with_clusters.pkl"
-TEST_USER_FILE = "resource/news/new_behaviors.tsv"
+GRAPH_CLUSTER_FILE = "graph/graph_data/book_graph_with_clusters.pkl"
+TEST_USER_FILE = "resource/book/new_behaviors.tsv"
