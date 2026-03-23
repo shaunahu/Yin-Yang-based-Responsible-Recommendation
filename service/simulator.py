@@ -1,5 +1,3 @@
-import numpy as np
-import json
 import os
 
 from common import logger
@@ -76,8 +74,9 @@ class Simulator:
         if not (hasattr(model, 'user_embedding') and hasattr(model, 'item_embedding')):
             logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
 
-        user_id_series = np.array(list(self.user_item_info["index_to_user"].keys()))
         rs.make_recommendation()
+        rs.save_user_id_mapping(self.users, self.user_item_info)
+        rs.save_item_id_mapping(self.items, self.user_item_info)
 
 if __name__ == "__main__":
     simulator = Simulator()

@@ -11,8 +11,8 @@ news_full_data/saved_clusters/
 graph/community_output/
 __pycache__
 *.pyc
-log
-log_tensorboard
+log/
+log_tensorboard/
 movie_full_data/data_movie/
 moviesGraph
 movie_full_data/edge_data/
@@ -23,3 +23,6 @@ movie_full_data/saved_clusters/
 book_full_data/saved_clusters/
 .DS_Store
 A_graph_data/
+saved/
+recbox_data/
+.idea/

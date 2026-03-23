@@ -3,8 +3,12 @@ import torch
 
 
 from common.constants import DIM, MAX_WORDS
-model = BertModel.from_pretrained('bert-large-uncased')
-tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+# model = BertModel.from_pretrained('bert-large-uncased')
+# tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+
+model = BertModel.from_pretrained('bert-base-uncased')
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
 
 class Item:
     def __init__(self, index:int, id:str, topic:str, title:str, content:str):
