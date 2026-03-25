@@ -46,7 +46,12 @@ class RSConfig(BaseConfig):
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'embedding_size': 64,
         'n_layers': 2,
-        'reg_weight': 1e-4,
+        'reg_weight': 1e-3,
+
+        # for NCL
+        'num_clusters': 50,
+        'e_step': 1,
+        'warm_up_step': 0,
 
         # evaluation parameter settings
         'eval_args': {

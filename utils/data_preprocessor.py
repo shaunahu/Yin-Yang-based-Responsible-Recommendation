@@ -96,7 +96,7 @@ class DataPreprocesser:
         if self.dataset == "book" or self.dataset == "news":
             return int(datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp())
         elif self.dataset == "movie":
-            return int(datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp())
+            return int(datetime.strptime(time_str, "%m/%d/%Y %H:%M:%S").timestamp())
         else:
             return None
 
