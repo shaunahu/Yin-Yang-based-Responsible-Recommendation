@@ -74,9 +74,7 @@ class Simulator:
         if not (hasattr(model, 'user_embedding') and hasattr(model, 'item_embedding')):
             logger.error(f"{rs.recommender} has no user embedding layer and no item embedding layer.")
 
-        rs.make_recommendation(user_item_info=self.user_item_info)
-        rs.save_user_id_mapping(self.users, self.user_item_info)
-        rs.save_item_id_mapping(self.items, self.user_item_info)
+        rs.make_recommendation()
 
 if __name__ == "__main__":
     simulator = Simulator()

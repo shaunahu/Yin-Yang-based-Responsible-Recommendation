@@ -67,14 +67,12 @@ class Recommender:
             if hasattr(model, 'user_embedding'):
                 user_embedding = model.user_embedding.weight.data.cpu().numpy()
                 user_id_map = dataset.field2id_token['user_id']
-                user_token2id = dataset.field2token_id['user_id']
-                # create user id-embedding mapping {id:embedding}, the id is the user agent id.
                 user_id_to_embedding = {}
                 for internal_id, original_id in enumerate(user_id_map):
                     if internal_id < len(user_embedding):
                         user_id_to_embedding[original_id] = user_embedding[internal_id]
-                self.user_embedding = user_embedding
-                save_to_file(user_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'user_embedding.pkl')
+                self.user_embedding = user_id_to_embedding
+                save_to_file(user_id_to_embedding, self.config.base_path  / "saved" / self.dataset / self.recommender / "user_embedding.pkl")
 
             # create item id-embedding mapping {id:embedding}, the id is the item id.
             if hasattr(model, 'item_embedding'):
@@ -86,88 +84,100 @@ class Recommender:
                     if internal_id < len(item_embedding):
                         item_id_to_embedding[original_id] = item_embedding[internal_id]
                 self.item_embedding = item_id_to_embedding
-                save_to_file(item_id_to_embedding, self.config.base_path / "saved" / self.dataset / self.recommender / 'item_embedding.pkl')
+                save_to_file(item_id_to_embedding, self.config.base_path  / "saved" / self.dataset / self.recommender / "item_embedding.pkl")
         except Exception as e:
             logger.error(e)
 
-    def make_recommendation(self, batch_size=64, user_item_info=None):
+    def make_recommendation(self):
         top_k = self.base_config.getint("recommender", "top_k")
-        test_users = self.data.test_data.dataset.inter_feat[self.data.test_data.dataset.uid_field].unique()
+        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
 
-        # index_to_user: {0: 'U100', ...}, index_to_item: {0: 'B600045', ...}
-        index_to_user = user_item_info['index_to_user'] if user_item_info else {}
-        index_to_item = user_item_info['index_to_item'] if user_item_info else {}
+        # str(item/user.index) is the token used in .inter file
+        # id2token() returns these token strings
+        # item_embedding.pkl  keyed by str(item.index)
+        # user_embedding.pkl  keyed by str(user.index)
+        #
+        # lookup chain:
+        #   item.id → item_token_map[item.id] → str(item.index) → item_embedding[str(item.index)]
+        #   user.id → user_token_map[user.id] → str(user.index) → user_embedding[str(user.index)]
+
+        index_str_to_user_id = {str(user.index): user.id for user in self.users}
+        index_str_to_item_id = {str(item.index): item.id for item in self.items}
+
+        test_users = self.data.test_data.dataset.inter_feat[
+            self.data.test_data.dataset.uid_field
+        ].unique()
+
+        topk_score, topk_iid_list = full_sort_topk(
+            test_users,
+            self.saved_model,
+            self.data.test_data,
+            k=top_k,
+            device=self.saved_config['device']
+        )
+
+        # id2token returns str(user/item.index) — the original .inter token strings
+        external_user_ids = self.data.dataset.id2token(
+            self.data.dataset.uid_field, test_users.cpu()
+        )
 
         all_external_recommendations = []
-        total_batches = (len(test_users) + batch_size - 1) // batch_size
+        user_id_mapping = {}  # user.id → str(user.index), test users only
 
-        for i in range(0, len(test_users), batch_size):
-            batch_users = test_users[i:i + batch_size]
-            print(f"Processing batch {i // batch_size + 1}/{total_batches}")
-
-            topk_score, topk_iid_list = full_sort_topk(
-                batch_users, self.saved_model, self.data.test_data,
-                k=top_k, device=self.saved_config['device'],
+        for i, user_topk_iids in enumerate(topk_iid_list):
+            external_items = self.data.dataset.id2token(
+                self.data.dataset.iid_field, user_topk_iids.cpu()
             )
+            external_user_id = str(external_user_ids[i])
 
-            external_user_ids = self.data.dataset.id2token(
-                self.data.dataset.uid_field, batch_users.cpu()
-            )
+            found_user_id = index_str_to_user_id.get(external_user_id)
+            if found_user_id:
+                user_id_mapping[found_user_id] = external_user_id
+            original_user_id = found_user_id or external_user_id
 
-            for j, user_topk_iids in enumerate(topk_iid_list):
-                external_items = self.data.dataset.id2token(
-                    self.data.dataset.iid_field, user_topk_iids.cpu()
-                )
-                # convert numeric token back to original id
-                user_token = external_user_ids[j]
-                original_user_id = index_to_user.get(int(user_token), user_token)
-                original_items = [index_to_item.get(int(t), t) for t in external_items]
+            original_items = [
+                index_str_to_item_id[str(t)]
+                for t in external_items
+                if str(t) in index_str_to_item_id
+            ]
 
-                all_external_recommendations.append({
-                    'user_id': original_user_id,
-                    'recommended_items': original_items
-                })
+            all_external_recommendations.append({
+                'user_id': original_user_id,
+                'recommended_items': original_items
+            })
 
-            del topk_score, topk_iid_list
-            torch.cuda.empty_cache()
+        # user_token_map: {user.id: str(user.index)}
+        # usage: user_embedding[user_token_map[user.id]] → embedding vector
+        with open(save_dir / 'user_token_map.json', 'w') as f:
+            json.dump(user_id_mapping, f, indent=4)
+        logger.info(f"User token map saved: {len(user_id_mapping)} users")
 
-        save_to_file(all_external_recommendations,
-                     self.config.base_path / "saved" / self.dataset / self.recommender / 'recommendations.pkl')
+        # item_token_map: {item.id: str(item.index)}
+        # usage: item_embedding[item_token_map[item.id]] → embedding vector
+        # covers all items present in embedding (same scope as item_embedding.pkl)
+        # item_token_map: {item.id: str(item.index)}
+        item_by_index = {str(item.index): item.id for item in self.items}  # str(item.index) → item.id
+        item_by_seq = {str(idx): item.id for idx, item in enumerate(self.items)}  # sequential → item.id
+
+        item_id_mapping = {}
+        for token_key in self.item_embedding:
+            if token_key == '[PAD]':
+                continue
+            item_id = item_by_index.get(token_key) or item_by_seq.get(token_key)
+            if item_id:
+                item_id_mapping[item_id] = token_key
+
+        with open(save_dir / 'item_token_map.json', 'w') as f:
+            json.dump(item_id_mapping, f, indent=4)
+        logger.info(f"Item token map saved: {len(item_id_mapping)} items")
+
+        save_to_file(
+            all_external_recommendations,
+            save_dir / 'recommendations.pkl'
+        )
+        logger.info(f"Recommendations saved: {len(all_external_recommendations)} users")
+
         return all_external_recommendations
-
-    def save_item_id_mapping(self, items: List[Item], user_item_info: dict):
-        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
-        os.makedirs(save_dir, exist_ok=True)
-
-        item_token2id = self.data.dataset.field2token_id['item_id']
-        index_to_item = user_item_info['index_to_item']  # {0: 'B600045', 1: 'B601155', ...}
-
-        item_id_to_token = {}
-        for idx, item_id in index_to_item.items():
-            token_key = str(idx)
-            if token_key in item_token2id:
-                item_id_to_token[item_id] = int(item_token2id[token_key])
-
-        with open(save_dir / "item_id_token_map.json", "w") as f:
-            json.dump(item_id_to_token, f, indent=2)
-        logger.info(f"Item id-token mapping saved: {len(item_id_to_token)} items")
-
-    def save_user_id_mapping(self, users: List[UserAgent], user_item_info: dict):
-        save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
-        os.makedirs(save_dir, exist_ok=True)
-
-        user_token2id = self.data.dataset.field2token_id['user_id']
-        index_to_user = user_item_info['index_to_user']  # {0: 'U100', 1: 'U200', ...}
-
-        user_id_to_token = {}
-        for idx, user_id in index_to_user.items():
-            token_key = str(idx)
-            if token_key in user_token2id:
-                user_id_to_token[user_id] = int(user_token2id[token_key])
-
-        with open(save_dir / "user_id_token_map.json", "w") as f:
-            json.dump(user_id_to_token, f, indent=2)
-        logger.info(f"User id-token mapping saved: {len(user_id_to_token)} users")
 
     def init_rs(self, selected_method: str):
         if self.is_valid_method(selected_method):
@@ -210,6 +220,28 @@ class Recommender:
                 save_dir = self.config.base_path / "saved" / self.dataset / self.recommender
                 os.makedirs(save_dir, exist_ok=True)
                 trainer.saved_model_file = str(save_dir / f"{selected_method}.pth")
+
+                # save test set
+                uid_field = dataset.uid_field
+                iid_field = dataset.iid_field
+
+                test_inter = test_data.dataset.inter_feat
+                test_user_internal_ids = test_inter[uid_field].numpy()
+                test_item_internal_ids = test_inter[iid_field].numpy()
+
+                unique_user_ids = list(set(dataset.id2token(uid_field, test_user_internal_ids)))
+                unique_item_ids = list(set(dataset.id2token(iid_field, test_item_internal_ids)))
+
+                test_info = {
+                    'user_ids': unique_user_ids,
+                    'item_ids': unique_item_ids,
+                    'num_users': len(unique_user_ids),
+                    'num_items': len(unique_item_ids)
+                }
+
+                with open(save_dir / "test_set_info.json", 'w') as f:
+                    json.dump(test_info, f, indent=2)
+                logger.info(f"Test set info saved: {len(unique_user_ids)} users, {len(unique_item_ids)} items")
 
                 # model training
                 best_valid_score, best_valid_result = trainer.fit(train_data, valid_data)
