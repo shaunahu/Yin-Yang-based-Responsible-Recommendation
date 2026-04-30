@@ -22,7 +22,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(HERE)
 
-GRAPH_PATH = os.path.join(BASE_DIR, "booksGraph", "graph_with_edges.pkl")
+GRAPH_PATH = os.path.join(BASE_DIR, "newsGraph", "graph_with_edges.pkl")
 OUTPUT_DIR = os.path.join(BASE_DIR, "A_graph_data", "K5_weighted_node2vec_v4")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
