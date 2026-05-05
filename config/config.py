@@ -44,8 +44,8 @@ class RSConfig(BaseConfig):
         'stopping_step': 20,
         'learning_rate': base_config.getfloat("recommender", "learning_rate"),
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'embedding_size': 64,
-        'n_layers': 2,
+        'embedding_size': 128,
+        'n_layers': 3,
         'reg_weight': 1e-3,
 
         # for NCL

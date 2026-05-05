@@ -36,3 +36,19 @@ These files are automatically saved:
 2. `saved/item_embedding.pkl`: item embedding from the embedding layer of the trained model.
 3. `saved/user_embedding.pkl`: user embedding from the embedding layer of the trained model.
 4. `saved/LighGCN.pth`: the trained model.
+
+## MMR post-processing baseline
+After generating a baseline recommendation list, rerank the saved test-set recommendations with MMR:
+```shell
+python -m model.mmr_baseline --dataset book --recommender SGL
+```
+This reads `saved/<dataset>/<recommender>/recommendations.pkl`, applies MMR as
+a post-processing reranker, and writes
+`saved/<dataset>/<recommender>/mmr_recommendations.pkl`.
+
+Evaluate the original and MMR recommendation lists with ranking metrics:
+```shell
+python -m model.evaluate_recommendations --dataset book --recommender SGL
+```
+The evaluator appends ranking metrics to
+`saved/<dataset>/<recommender>/results.log`.
